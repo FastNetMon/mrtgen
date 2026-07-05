@@ -20,6 +20,10 @@
 //! * **abort-class tails** (optional) — the framing itself lies (Length
 //!   past EOF, truncated header), after which loading must stop.
 //!
+//! Alternatively, [`routes`] builds a file from a user-supplied JSON route
+//! list (prefix, next hop, communities, ...) instead of the built-in corpus,
+//! encoded either as a TABLE_DUMP_V2 RIB dump or as BGP4MP UPDATEs.
+//!
 //! Output is byte-for-byte deterministic for a given [`GeneratorConfig`]:
 //! no clocks, no randomness. A JSON [`Manifest`] lists every record with
 //! its byte offset, size, type/subtype, expected parser outcome
@@ -55,9 +59,11 @@ pub mod generator;
 pub mod invalid;
 pub mod manifest;
 pub mod records;
+pub mod routes;
 pub mod types;
 pub mod writer;
 
 pub use generator::{corpus_peers, generate, Corpus, FatalKind, GeneratorConfig};
 pub use manifest::{Expect, Manifest, RecordEntry};
+pub use routes::{generate_from_routes, routes_from_json, RouteFormat, RouteSpec};
 pub use writer::MrtRecord;

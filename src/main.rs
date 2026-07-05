@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use mrtgen::{generate, FatalKind, GeneratorConfig};
+use mrtgen::{generate, generate_from_routes, routes_from_json, Corpus, FatalKind, GeneratorConfig, RouteFormat};
 
 const USAGE: &str = "\
 mrtgen - deterministic synthetic MRT corpus generator (RFC 6396 / 8050)
@@ -25,6 +25,21 @@ OPTIONS:
                              files contain the same records as the main file
                              plus the fatal tail
         --base-timestamp <N> Timestamp of record 0 [default: 1600000000]
+    -r, --routes <FILE>      Generate records from a JSON route list instead
+                             of the built-in corpus. FILE holds an array of
+                             objects: {\"prefix\": \"1.2.3.0/24\",
+                             \"nexthop\": \"1.1.1.1\", \"as_path\": [64500],
+                             \"origin\": \"igp\", \"med\": 100,
+                             \"local_pref\": 200,
+                             \"standard_communities\": [\"111:222\"],
+                             \"extended_communities\": [\"rt:64500:1\"],
+                             \"large_communities\": [\"64500:1:2\"],
+                             \"path_id\": 7}
+                             Only prefix and nexthop are required.
+        --routes-format <F>  Encoding for --routes [default: table-dump-v2]
+                             table-dump-v2: PEER_INDEX_TABLE + one RIB
+                                            record per route
+                             bgp4mp:        one BGP UPDATE per route
     -h, --help               Show this help
 ";
 
@@ -38,6 +53,8 @@ struct Args {
     fatal: Option<FatalKind>,
     fatal_dir: Option<PathBuf>,
     base_timestamp: u32,
+    routes: Option<PathBuf>,
+    routes_format: RouteFormat,
 }
 
 fn parse_fatal(s: &str) -> Result<FatalKind, String> {
@@ -46,6 +63,14 @@ fn parse_fatal(s: &str) -> Result<FatalKind, String> {
         "truncated-header" => Ok(FatalKind::TruncatedHeader),
         "huge-length" => Ok(FatalKind::HugeLength),
         other => Err(format!("unknown --fatal kind '{other}'")),
+    }
+}
+
+fn parse_routes_format(s: &str) -> Result<RouteFormat, String> {
+    match s {
+        "table-dump-v2" => Ok(RouteFormat::TableDumpV2),
+        "bgp4mp" => Ok(RouteFormat::Bgp4mp),
+        other => Err(format!("unknown --routes-format '{other}' (expected table-dump-v2 or bgp4mp)")),
     }
 }
 
@@ -60,6 +85,8 @@ fn parse_args() -> Result<Option<Args>, String> {
         fatal: None,
         fatal_dir: None,
         base_timestamp: 1_600_000_000,
+        routes: None,
+        routes_format: RouteFormat::TableDumpV2,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -77,14 +104,20 @@ fn parse_args() -> Result<Option<Args>, String> {
             "--base-timestamp" => {
                 args.base_timestamp = value("--base-timestamp")?.parse().map_err(|e| format!("--base-timestamp: {e}"))?
             }
+            "-r" | "--routes" => args.routes = Some(PathBuf::from(value("--routes")?)),
+            "--routes-format" => args.routes_format = parse_routes_format(&value("--routes-format")?)?,
             other => return Err(format!("unknown argument '{other}' (see --help)")),
         }
+    }
+    if args.routes.is_some()
+        && (args.no_valid || args.no_skip || args.no_combo || args.no_attr_errors || args.fatal.is_some() || args.fatal_dir.is_some())
+    {
+        return Err("--routes replaces the built-in corpus and cannot be combined with --no-*, --fatal or --fatal-dir".into());
     }
     Ok(Some(args))
 }
 
-fn write_corpus(cfg: &GeneratorConfig, mrt_path: &PathBuf, manifest_path: &PathBuf) -> std::io::Result<()> {
-    let corpus = generate(cfg);
+fn write_corpus(corpus: &Corpus, mrt_path: &PathBuf, manifest_path: &PathBuf) -> std::io::Result<()> {
     std::fs::write(mrt_path, &corpus.bytes)?;
     std::fs::write(manifest_path, corpus.manifest.to_json())?;
     println!(
@@ -113,6 +146,31 @@ fn main() -> ExitCode {
         }
     };
 
+    let manifest_path = args.manifest.clone().unwrap_or_else(|| {
+        let mut p = args.out.as_os_str().to_owned();
+        p.push(".manifest.json");
+        PathBuf::from(p)
+    });
+
+    if let Some(routes_path) = &args.routes {
+        let corpus = std::fs::read_to_string(routes_path)
+            .map_err(|e| format!("reading {}: {e}", routes_path.display()))
+            .and_then(|json| routes_from_json(&json))
+            .and_then(|routes| generate_from_routes(&routes, args.routes_format, args.base_timestamp));
+        let corpus = match corpus {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("error: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        if let Err(e) = write_corpus(&corpus, &args.out, &manifest_path) {
+            eprintln!("error writing {}: {e}", args.out.display());
+            return ExitCode::FAILURE;
+        }
+        return ExitCode::SUCCESS;
+    }
+
     let cfg = GeneratorConfig {
         base_timestamp: args.base_timestamp,
         include_valid: !args.no_valid,
@@ -122,13 +180,7 @@ fn main() -> ExitCode {
         fatal: args.fatal,
     };
 
-    let manifest_path = args.manifest.clone().unwrap_or_else(|| {
-        let mut p = args.out.as_os_str().to_owned();
-        p.push(".manifest.json");
-        PathBuf::from(p)
-    });
-
-    if let Err(e) = write_corpus(&cfg, &args.out, &manifest_path) {
+    if let Err(e) = write_corpus(&generate(&cfg), &args.out, &manifest_path) {
         eprintln!("error writing {}: {e}", args.out.display());
         return ExitCode::FAILURE;
     }
@@ -142,7 +194,7 @@ fn main() -> ExitCode {
             let cfg = GeneratorConfig { fatal: Some(kind), ..cfg.clone() };
             let mrt = dir.join(format!("{}.mrt", kind.kind_name()));
             let man = dir.join(format!("{}.mrt.manifest.json", kind.kind_name()));
-            if let Err(e) = write_corpus(&cfg, &mrt, &man) {
+            if let Err(e) = write_corpus(&generate(&cfg), &mrt, &man) {
                 eprintln!("error writing {}: {e}", mrt.display());
                 return ExitCode::FAILURE;
             }

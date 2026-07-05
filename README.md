@@ -83,6 +83,66 @@ Options: `--no-valid`, `--no-skip`, `--no-combo`, `--no-attr-errors`,
 `--fatal <length-overrun|truncated-header|huge-length>` (append one fatal tail
 to the main file), `--base-timestamp <N>`, `--manifest <FILE>`.
 
+## Route-list mode
+
+Instead of the built-in corpus, `--routes <FILE>` builds an MRT file from a
+JSON array of routes you supply:
+
+```json
+[
+  {
+    "prefix": "1.2.3.0/24",
+    "nexthop": "1.1.1.1",
+    "standard_communities": ["111:222", "222:333"]
+  },
+  {
+    "prefix": "2001:db8:64::/48",
+    "nexthop": "2001:db8::9",
+    "as_path": [64500, 4200000001],
+    "origin": "incomplete",
+    "med": 50,
+    "local_pref": 150,
+    "extended_communities": ["rt:64500:1"],
+    "large_communities": ["64500:1:2"],
+    "path_id": 9
+  }
+]
+```
+
+```console
+$ mrtgen --routes routes.json -o routes.mrt
+wrote routes.mrt (295 bytes, 4 records: 4 valid, 0 skip, 0 abort) + routes.mrt.manifest.json
+$ mrtgen --routes routes.json --routes-format bgp4mp -o updates.mrt
+```
+
+Only `prefix` and `nexthop` are required; the address family is taken from
+the prefix and the next hop must match it. Optional fields per route:
+
+| field                  | format                                                              | default   |
+|------------------------|---------------------------------------------------------------------|-----------|
+| `as_path`              | array of AS numbers (one AS_SEQUENCE); `[]` = empty path (iBGP)     | `[64500]` |
+| `origin`               | `"igp"` / `"egp"` / `"incomplete"` or `0`-`2`                        | `igp`     |
+| `med`, `local_pref`    | u32                                                                 | omitted   |
+| `atomic_aggregate`     | bool                                                                | `false`   |
+| `standard_communities` | `"asn:value"`, `"no-export"`, `"no-advertise"`, `"no-export-subconfed"`, or `"0xNNNNNNNN"` | omitted |
+| `extended_communities` | `"rt:admin:value"`, `"soo:admin:value"` (2- or 4-byte-AS form picked from the admin), or 16 raw hex digits | omitted |
+| `large_communities`    | `"global:local1:local2"`                                             | omitted   |
+| `path_id`              | u32 ADD-PATH Path Identifier; selects the `_ADDPATH` subtype         | omitted   |
+
+Two encodings via `--routes-format`:
+
+* `table-dump-v2` (default) — a RIB dump: one `PEER_INDEX_TABLE` followed by
+  one `RIB_IPV4_UNICAST` / `RIB_IPV6_UNICAST` (or `_ADDPATH`) record per
+  route, in input order.
+* `bgp4mp` — a stream of announcements: one `BGP4MP_MESSAGE_AS4` (or
+  `_ADDPATH`) record per route, each carrying a BGP UPDATE (IPv6 routes go
+  via MP_REACH_NLRI).
+
+Unknown JSON keys are rejected so typos fail loudly. Output is deterministic
+and comes with the same manifest as corpus mode: every record is
+`expect: valid` and `details` echoes the route's fields for CI assertions.
+The library entry points are `routes_from_json()` and `generate_from_routes()`.
+
 ## Manifest
 
 Every `.mrt` file is accompanied by `<file>.manifest.json` describing each
