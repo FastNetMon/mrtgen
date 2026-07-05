@@ -239,7 +239,7 @@ record, in file order:
 | expect  | meaning                                                              |
 |---------|----------------------------------------------------------------------|
 | `valid` | must be fully parsed; `details` holds content facts to assert on     |
-| `skip`  | record content is broken but framing is honest; parser must skip it and keep loading |
+| `skip`  | record is present in the MRT file and has honest framing, but its content is intentionally broken; parser must reject/skip it and keep loading |
 | `abort` | framing is broken; parser must stop loading at this point            |
 
 `kind` is a unique, stable identifier per test case — key your CI assertions
