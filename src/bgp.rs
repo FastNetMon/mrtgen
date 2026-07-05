@@ -99,6 +99,17 @@ pub fn attr_ext_communities(comms: &[[u8; 8]]) -> Vec<u8> {
     attribute(FLAG_OPTIONAL | FLAG_TRANSITIVE, ATTR_EXT_COMMUNITY, &b.into_vec())
 }
 
+/// IPv6 Address Specific Extended Communities (RFC 5701, attribute 25):
+/// each community is 20 bytes — type, subtype, 16-byte IPv6 global
+/// administrator, 2-byte local administrator.
+pub fn attr_ipv6_ext_communities(comms: &[[u8; 20]]) -> Vec<u8> {
+    let mut b = Buf::new();
+    for c in comms {
+        b.bytes(c);
+    }
+    attribute(FLAG_OPTIONAL | FLAG_TRANSITIVE, ATTR_IPV6_EXT_COMMUNITY, &b.into_vec())
+}
+
 /// Large Communities (RFC 8092): each community is three 4-byte integers
 /// (Global Administrator, Local Data Part 1, Local Data Part 2).
 pub fn attr_large_communities(comms: &[[u32; 3]]) -> Vec<u8> {
@@ -181,6 +192,16 @@ pub fn rd_type1(ip: [u8; 4], number: u16) -> [u8; 8] {
     let mut rd = [0u8; 8];
     rd[..2].copy_from_slice(&1u16.to_be_bytes());
     rd[2..6].copy_from_slice(&ip);
+    rd[6..].copy_from_slice(&number.to_be_bytes());
+    rd
+}
+
+/// Type 2 Route Distinguisher: 4-byte AS administrator + 2-byte assigned
+/// number (RFC 4364 section 4.2).
+pub fn rd_type2(asn: u32, number: u16) -> [u8; 8] {
+    let mut rd = [0u8; 8];
+    rd[..2].copy_from_slice(&2u16.to_be_bytes());
+    rd[2..6].copy_from_slice(&asn.to_be_bytes());
     rd[6..].copy_from_slice(&number.to_be_bytes());
     rd
 }

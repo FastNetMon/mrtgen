@@ -83,6 +83,10 @@ cargo run --quiet -- \
     --routes "$ROOT/tests/parsers/routes-all-options.json" \
     --routes-format bgp4mp \
     --out "$OUT_DIR/routes-bgp4mp.mrt"
+cargo run --quiet -- \
+    --routes "$ROOT/tests/parsers/routes-flowspec.json" \
+    --routes-format bgp4mp \
+    --out "$OUT_DIR/routes-flowspec.mrt"
 
 echo "Creating BGP-family subcorpora for parsers that do not support IGP MRT types"
 python3 "$ROOT/tests/parsers/slice-corpus.py" \

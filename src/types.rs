@@ -68,6 +68,8 @@ pub const ATTR_MP_UNREACH_NLRI: u8 = 15;
 pub const ATTR_EXT_COMMUNITY: u8 = 16;
 pub const ATTR_AS4_PATH: u8 = 17;
 pub const ATTR_AS4_AGGREGATOR: u8 = 18;
+/// IPv6 Address Specific Extended Community (RFC 5701).
+pub const ATTR_IPV6_EXT_COMMUNITY: u8 = 25;
 pub const ATTR_LARGE_COMMUNITY: u8 = 32;
 
 // Well-known communities (RFC 1997)
@@ -87,3 +89,6 @@ pub const BGP_AFI_IPV6: u16 = 2;
 pub const SAFI_UNICAST: u8 = 1;
 pub const SAFI_MULTICAST: u8 = 2;
 pub const SAFI_MPLS_VPN: u8 = 128;
+/// Dissemination of Flow Specification rules (RFC 8955/8956); the AFI
+/// selects IPv4 vs IPv6.
+pub const SAFI_FLOWSPEC: u8 = 133;

@@ -33,9 +33,18 @@ OPTIONS:
                              \"local_pref\": 200,
                              \"standard_communities\": [\"111:222\"],
                              \"extended_communities\": [\"rt:64500:1\"],
+                             \"ipv6_extended_communities\": [\"rt:2001:db8::1:5\"],
                              \"large_communities\": [\"64500:1:2\"],
-                             \"path_id\": 7}
-                             Only prefix and nexthop are required.
+                             \"path_id\": 7,
+                             \"rd\": \"64500:1\", \"label\": 100,
+                             \"raw_attributes\": [{\"flags\": 192,
+                               \"code\": 99, \"value_hex\": \"deadbeef\"}]}
+                             Only prefix and nexthop are required. rd/label
+                             select MPLS VPN (SAFI 128). Instead of prefix, a
+                             route may carry a \"flowspec\" rule (RFC 8955)
+                             plus \"actions\" (rate_limit_bytes, redirect,
+                             ...); flowspec needs --routes-format bgp4mp.
+                             See the README for the full schema.
         --routes-format <F>  Encoding for --routes [default: table-dump-v2]
                              table-dump-v2: PEER_INDEX_TABLE + one RIB
                                             record per route

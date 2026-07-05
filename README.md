@@ -126,22 +126,75 @@ the prefix and the next hop must match it. Optional fields per route:
 | `atomic_aggregate`     | bool                                                                | `false`   |
 | `standard_communities` | `"asn:value"`, `"no-export"`, `"no-advertise"`, `"no-export-subconfed"`, or `"0xNNNNNNNN"` | omitted |
 | `extended_communities` | `"rt:admin:value"`, `"soo:admin:value"` (2- or 4-byte-AS form picked from the admin), or 16 raw hex digits | omitted |
+| `ipv6_extended_communities` | RFC 5701 (attr 25): `"rt:<ipv6>:<local>"`, `"soo:<ipv6>:<local>"`, or 40 raw hex digits | omitted |
 | `large_communities`    | `"global:local1:local2"`                                             | omitted   |
 | `path_id`              | u32 ADD-PATH Path Identifier; selects the `_ADDPATH` subtype         | omitted   |
+| `rd`                   | Route Distinguisher; presence selects MPLS VPN (SAFI 128): `"asn:number"` (type 0, or type 2 with a 4-byte ASN) or `"a.b.c.d:number"` (type 1) | omitted |
+| `label`                | u32 MPLS label (< 2^20) for the VPN NLRI; requires `rd`              | `0`       |
+| `flowspec`             | FlowSpec rule object (see below); replaces `prefix`                  | —         |
+| `actions`              | FlowSpec traffic-filtering actions (see below); requires `flowspec`  | omitted   |
+| `raw_attributes`       | escape hatch: `[{"flags": 192 or ["optional","transitive","partial"], "code": 99, "value_hex": "deadbeef"}]`, appended after all built-in attributes with honest framing (extended-length handled automatically); duplicating a code is allowed deliberately | omitted |
 
 Two encodings via `--routes-format`:
 
 * `table-dump-v2` (default) — a RIB dump: one `PEER_INDEX_TABLE` followed by
   one `RIB_IPV4_UNICAST` / `RIB_IPV6_UNICAST` (or `_ADDPATH`) record per
-  route, in input order.
+  route, in input order. VPN routes (`rd`) become `RIB_GENERIC` /
+  `RIB_GENERIC_ADDPATH` records (AFI 1/2, SAFI 128) with an RD-prefixed next
+  hop.
 * `bgp4mp` — a stream of announcements: one `BGP4MP_MESSAGE_AS4` (or
-  `_ADDPATH`) record per route, each carrying a BGP UPDATE (IPv6 routes go
-  via MP_REACH_NLRI).
+  `_ADDPATH`) record per route, each carrying a BGP UPDATE (IPv6, VPN and
+  FlowSpec routes go via MP_REACH_NLRI).
+
+### FlowSpec rules (RFC 8955 / RFC 8956)
+
+A route may carry a `flowspec` object instead of a `prefix` — this encodes a
+Flow Specification NLRI (AFI 1/2, SAFI 133), the announcement format used for
+DDoS mitigation rules. `nexthop` becomes optional (0-length next hop when
+absent). FlowSpec routes require `--routes-format bgp4mp`: they are
+UPDATE-stream artifacts, and common MRT parsers cannot walk
+RIB_GENERIC/SAFI-133 TABLE_DUMP_V2 records.
+
+```json
+{
+  "flowspec": {
+    "dst_prefix": "192.0.2.0/24", "src_prefix": "203.0.113.0/24",
+    "protocol": [6], "port": [25], "dst_port": [80, {"range": [8080, 8088]}],
+    "src_port": [{"ge": 1024}], "icmp_type": [8], "icmp_code": [0],
+    "tcp_flags": [{"flags": ["syn"], "match": false, "not": false}],
+    "packet_length": [{"range": [64, 1500]}], "dscp": [46],
+    "fragment": [{"flags": ["is-fragment"]}]
+  },
+  "actions": {
+    "rate_limit_bytes": 0, "rate_limit_packets": 1000,
+    "redirect": "64500:1", "traffic_marking": 46,
+    "terminal_action": true, "sample": false
+  }
+}
+```
+
+Numeric components take bare numbers (`== n`), `{"eq"|"lt"|"le"|"gt"|"ge": n}`
+or `{"range": [a, b]}`; list items are ORed. `tcp_flags` / `fragment` take
+flag names (or a raw number) with optional `match` / `not` bits. IPv6 rules
+(family from the prefixes, or `"afi": "ipv6"` when there is none) additionally
+support `flow_label`. `actions` encode as RFC 8955 section 7 extended
+communities: traffic-rate-bytes (0x8006), traffic-rate-packets (0x800c),
+traffic-action (0x8007, T/S bits), rt-redirect (0x8008/0x8108/0x8208 chosen
+from the administrator form) and traffic-marking (0x8009). The manifest
+records the exact NLRI bytes under `details.nlri_hex` and the action
+communities under `details.action_ext_communities_hex`; the NLRI encoder is
+unit-tested against the worked examples in RFC 8955 section 4.3.
 
 Unknown JSON keys are rejected so typos fail loudly. Output is deterministic
 and comes with the same manifest as corpus mode: every record is
 `expect: valid` and `details` echoes the route's fields for CI assertions.
 The library entry points are `routes_from_json()` and `generate_from_routes()`.
+
+Parser-support caveats (reflected in the harness checks): mrtparse decodes
+SAFI-128 UPDATEs fully but cannot walk TABLE_DUMP_V2 RIB_GENERIC VPN records,
+has no FlowSpec NLRI decoder (it skips the MP_REACH body gracefully), and
+leaves attribute 25 / unknown attribute codes raw — which still allows
+byte-exact validation.
 
 ## Manifest
 
@@ -276,13 +329,21 @@ parsers that only support the usual MRT BGP types (`TABLE_DUMP`,
   `--routes` option (both key aliases, defaults, empty AS_PATH, string and
   numeric origins, MED/LOCAL_PREF extremes, ATOMIC_AGGREGATE, every community
   syntax including well-known names and raw hex, 2- and 4-byte-AS extended
-  communities, ADD-PATH path ids, and edge prefixes `0.0.0.0/0`, `/32`,
-  `/128`). The mrtparse runner validates these **field by field**: for each
-  record, `routes_mrtparse_check.py` compares the prefix, next hop, AS_PATH,
-  ORIGIN, MED, LOCAL_PREF, ATOMIC_AGGREGATE, all three community families and
-  the Path Identifier that mrtparse decoded against the values promised by
-  the manifest `details`. It can also be run standalone against any directory
-  holding a `routes-td2.mrt` / `routes-bgp4mp.mrt` pair:
+  communities, RFC 5701 IPv6 address-specific extended communities, raw
+  escape-hatch attributes, VPNv4/VPNv6 routes with all three RD types and
+  labels, ADD-PATH path ids, and edge prefixes `0.0.0.0/0`, `/32`, `/128`).
+  `routes-flowspec.mrt` is built from `tests/parsers/routes-flowspec.json`
+  (bgp4mp only) and covers every FlowSpec match component and action. The
+  mrtparse runner validates these **field by field**: for each record,
+  `routes_mrtparse_check.py` compares the prefix, next hop, AS_PATH, ORIGIN,
+  MED, LOCAL_PREF, ATOMIC_AGGREGATE, all community families (attribute 25 and
+  raw attributes byte-exactly via hex), RD/label of VPN NLRI, FlowSpec
+  MP_REACH headers and action communities, and the Path Identifier that
+  mrtparse decoded against the values promised by the manifest `details`.
+  Where mrtparse cannot decode (TD2 RIB_GENERIC VPN records, FlowSpec NLRI
+  bodies) the checker asserts structure only; the byte-level contract for
+  those lives in the manifest and the Rust unit tests. It can also be run
+  standalone against any directory holding the routes files:
 
   ```console
   $ python3 tests/parsers/runners/routes_mrtparse_check.py target/parser-harness/corpus
