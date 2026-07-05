@@ -63,6 +63,10 @@ pub const ATTR_LOCAL_PREF: u8 = 5;
 pub const ATTR_ATOMIC_AGGREGATE: u8 = 6;
 pub const ATTR_AGGREGATOR: u8 = 7;
 pub const ATTR_COMMUNITY: u8 = 8;
+/// ORIGINATOR_ID (RFC 4456).
+pub const ATTR_ORIGINATOR_ID: u8 = 9;
+/// CLUSTER_LIST (RFC 4456).
+pub const ATTR_CLUSTER_LIST: u8 = 10;
 pub const ATTR_MP_REACH_NLRI: u8 = 14;
 pub const ATTR_MP_UNREACH_NLRI: u8 = 15;
 pub const ATTR_EXT_COMMUNITY: u8 = 16;
@@ -70,6 +74,8 @@ pub const ATTR_AS4_PATH: u8 = 17;
 pub const ATTR_AS4_AGGREGATOR: u8 = 18;
 /// IPv6 Address Specific Extended Community (RFC 5701).
 pub const ATTR_IPV6_EXT_COMMUNITY: u8 = 25;
+/// AIGP (RFC 7311).
+pub const ATTR_AIGP: u8 = 26;
 pub const ATTR_LARGE_COMMUNITY: u8 = 32;
 
 // Well-known communities (RFC 1997)

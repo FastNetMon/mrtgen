@@ -1,0 +1,113 @@
+[
+  {
+    "flowspec": {"dst_prefix": "192.0.2.0/24", "protocol": [6], "port": [25]},
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "192.0.2.0/24",
+      "src_prefix": "203.0.113.0/24",
+      "port": [{"range": [137, 139]}, 8080]
+    },
+    "actions": {"rate_limit_packets": 1000.5, "traffic_marking": 46}
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "192.0.2.1/32",
+      "icmp_type": [8],
+      "icmp_code": [0],
+      "tcp_flags": [{"flags": ["syn"]}, {"flags": ["ack"], "match": true, "not": true}],
+      "packet_length": [{"range": [64, 1500]}],
+      "dscp": [46],
+      "fragment": [{"flags": ["dont-fragment", "first-fragment"]}]
+    },
+    "nexthop": "192.0.2.99",
+    "standard_communities": ["64500:666"],
+    "actions": {"redirect": "64500:1", "terminal_action": true, "sample": true}
+  },
+  {
+    "flowspec": {"afi": "ipv6", "protocol": [17], "dst_port": [{"le": 53}], "src_port": [{"gt": 1023}]},
+    "actions": {"rate_limit_bytes": 1000000}
+  },
+  {
+    "flowspec": {"dst_prefix": "2001:db8:f::/48", "flow_label": [{"gt": 0}]},
+    "nexthop": "2001:db8::fe",
+    "path_id": 77,
+    "actions": {"redirect": "192.0.2.9:2"}
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "198.51.100.0/25",
+      "protocol": [6, 17],
+      "packet_length": [{"lt": 64}, {"ge": 1400}],
+      "tcp_flags": [{"flags": 6, "not": true}],
+      "dscp": [{"le": 46}]
+    },
+    "actions": {"rate_limit_bytes": 125000}
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "192.0.2.128/25",
+      "src_prefix": "198.51.100.0/24",
+      "protocol": [{"eq": 6}, 17, {"lt": 2}],
+      "port": [80, {"range": [1024, 2048]}],
+      "dst_port": [{"le": 1023}, 3128],
+      "src_port": [{"ge": 49152}],
+      "icmp_type": [{"lt": 3}],
+      "icmp_code": [{"gt": 1}],
+      "tcp_flags": [{"flags": ["fin", "psh", "urg"]}, {"flags": 2570, "match": true}],
+      "packet_length": [{"le": 4294967296}],
+      "dscp": [0, 63],
+      "fragment": [{"flags": ["is-fragment", "last-fragment"], "not": true}, {"flags": 1, "match": true}]
+    },
+    "nexthop": "192.0.2.55",
+    "as_path": [64500, 64777],
+    "med": 5,
+    "local_pref": 5000,
+    "aggregator": "64500:192.0.2.55",
+    "originator_id": "192.0.2.60",
+    "cluster_list": ["192.0.2.61"],
+    "aigp": 555,
+    "standard_communities": ["64500:5"],
+    "extended_communities": ["rt:64500:5"],
+    "large_communities": ["64500:5:5"],
+    "actions": {
+      "rate_limit_bytes": 1000000,
+      "rate_limit_packets": 500,
+      "redirect": "4200000001:9",
+      "traffic_marking": 22,
+      "terminal_action": true,
+      "sample": true
+    },
+    "raw_attributes": [{"flags": ["optional", "transitive", "partial"], "code": 252, "value_hex": "cafe"}]
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "2001:db8:dead::/48",
+      "src_prefix": "2001:db8:beef::/48",
+      "protocol": [58],
+      "dst_port": [{"range": [8000, 8100]}],
+      "src_port": [1024],
+      "icmp_type": [128, 129],
+      "icmp_code": [0],
+      "tcp_flags": [{"flags": ["syn"], "not": true}],
+      "packet_length": [{"range": [40, 9000]}],
+      "dscp": [{"lt": 8}],
+      "fragment": [{"flags": ["is-fragment", "first-fragment", "last-fragment"]}],
+      "flow_label": [{"range": [1024, 1048575]}, 0]
+    },
+    "nexthop": "2001:db8::ff",
+    "path_id": 4294967295,
+    "local_pref": 10,
+    "originator_id": "203.0.113.1",
+    "cluster_list": ["203.0.113.2"],
+    "aigp": 6,
+    "ipv6_extended_communities": ["soo:2001:db8::99:1"],
+    "large_communities": ["6:6:6"],
+    "actions": {"rate_limit_packets": 0, "traffic_marking": 0, "sample": false}
+  },
+  {
+    "flowspec": {"protocol": [1], "icmp_type": [{"range": [3, 5]}], "icmp_code": [{"le": 15}]},
+    "actions": {"redirect": "65535:4294967295"}
+  }
+]

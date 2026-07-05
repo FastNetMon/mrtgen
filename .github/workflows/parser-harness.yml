@@ -1,0 +1,36 @@
+# Extended cross-parser validation: builds external MRT parsers (mrtparse,
+# bgpdump, bgpkit-parser) in Docker and runs them over freshly generated
+# corpora, including the field-level route-list and FlowSpec checks.
+# Manual-only: parser images are rebuilt from upstream on every run, so this
+# is slower and less hermetic than the unit tests.
+name: Parser harness
+
+on:
+  workflow_dispatch:
+    inputs:
+      parsers:
+        description: "Parsers to run, space-separated (mrtparse bgpdump bgpkit-parser); empty runs all"
+        required: false
+        default: ""
+      strict:
+        description: "Also fail on malformed-corpus and fatal-tail parser errors"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  parser-harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Unit tests
+        run: cargo test
+
+      - name: Run parser harness
+        run: tests/parsers/run-docker.sh ${{ inputs.strict && '--strict' || '' }} ${{ inputs.parsers }}

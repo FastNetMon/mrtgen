@@ -90,6 +90,28 @@ pub fn attr_communities(comms: &[u32]) -> Vec<u8> {
     attribute(FLAG_OPTIONAL | FLAG_TRANSITIVE, ATTR_COMMUNITY, &b.into_vec())
 }
 
+/// ORIGINATOR_ID (RFC 4456): router id of the route's originator.
+pub fn attr_originator_id(id: [u8; 4]) -> Vec<u8> {
+    attribute(FLAG_OPTIONAL, ATTR_ORIGINATOR_ID, &id)
+}
+
+/// CLUSTER_LIST (RFC 4456): the reflection path's cluster ids, in order.
+pub fn attr_cluster_list(ids: &[[u8; 4]]) -> Vec<u8> {
+    let mut b = Buf::new();
+    for id in ids {
+        b.bytes(id);
+    }
+    attribute(FLAG_OPTIONAL, ATTR_CLUSTER_LIST, &b.into_vec())
+}
+
+/// AIGP (RFC 7311): a single AIGP TLV (type 1) carrying the metric. The TLV
+/// length covers the whole TLV — type (1) + length (2) + value (8) = 11.
+pub fn attr_aigp(metric: u64) -> Vec<u8> {
+    let mut b = Buf::new();
+    b.u8(1).u16(11).u32((metric >> 32) as u32).u32(metric as u32);
+    attribute(FLAG_OPTIONAL, ATTR_AIGP, &b.into_vec())
+}
+
 /// Extended Communities (RFC 4360): each community is 8 bytes wide.
 pub fn attr_ext_communities(comms: &[[u8; 8]]) -> Vec<u8> {
     let mut b = Buf::new();

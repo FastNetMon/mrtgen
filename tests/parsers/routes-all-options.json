@@ -1,0 +1,165 @@
+[
+  {
+    "prefix": "1.2.3.0/24",
+    "nexthop": "1.1.1.1"
+  },
+  {
+    "prefix": "10.20.0.0/16",
+    "nexthop": "192.0.2.9",
+    "as_path": [64500, 65000, 4200000001],
+    "origin": "egp",
+    "med": 100,
+    "local_pref": 200,
+    "atomic_aggregate": true,
+    "aggregator": "4200000001:192.0.2.7",
+    "originator_id": "10.255.0.1",
+    "cluster_list": ["10.255.0.2", "10.255.0.3"],
+    "aigp": 4294967296,
+    "standard_communities": ["111:222", "222:333", "no-export", "no-advertise", "no-export-subconfed", "0xFFFF029A"],
+    "extended_communities": ["rt:64500:1", "rt:4200000001:7", "soo:64500:9", "0002FBF400000001"],
+    "large_communities": ["64500:1:2", "4200000001:7:8"],
+    "path_id": 5
+  },
+  {
+    "prefix": "203.0.113.0/25",
+    "next_hop": "203.0.113.254",
+    "as_path": [],
+    "origin": 2,
+    "communities": ["65535:1"]
+  },
+  {
+    "prefix": "0.0.0.0/0",
+    "nexthop": "192.0.2.1",
+    "origin": "igp"
+  },
+  {
+    "prefix": "198.51.100.7/32",
+    "nexthop": "192.0.2.2",
+    "med": 0,
+    "local_pref": 4294967295,
+    "raw_attributes": [
+      {"flags": 192, "code": 99, "value_hex": "deadbeef"},
+      {"flags": ["optional", "transitive", "partial"], "code": 200},
+      {"flags": ["optional"], "code": 201, "value_hex": "aa"}
+    ]
+  },
+  {
+    "prefix": "2001:db8:64::/48",
+    "nexthop": "2001:db8::9"
+  },
+  {
+    "prefix": "2001:db8::1/128",
+    "nexthop": "2001:db8:ffff::1",
+    "as_path": [64500, 4200000001],
+    "origin": "incomplete",
+    "med": 50,
+    "local_pref": 150,
+    "atomic_aggregate": true,
+    "aggregator": "64500:198.51.100.1",
+    "originator_id": "192.0.2.200",
+    "cluster_list": ["192.0.2.201"],
+    "aigp": 0,
+    "standard_communities": ["64500:100"],
+    "extended_communities": ["soo:4200000001:12"],
+    "ipv6_extended_communities": ["rt:2001:db8::1:5", "soo:2001:db8::2:7", "000220010db8000000000000000000000009000a"],
+    "large_communities": ["4200000001:0:4294967295"],
+    "path_id": 4294967295
+  },
+  {
+    "prefix": "10.30.0.0/24",
+    "nexthop": "192.0.2.5",
+    "rd": "64500:1",
+    "label": 100,
+    "extended_communities": ["rt:64500:1"]
+  },
+  {
+    "prefix": "10.31.0.0/24",
+    "nexthop": "192.0.2.6",
+    "rd": "192.0.2.66:2"
+  },
+  {
+    "prefix": "2001:db8:65::/48",
+    "nexthop": "2001:db8::a",
+    "rd": "4200000001:7",
+    "label": 1048575,
+    "path_id": 8
+  },
+  {
+    "prefix": "172.16.0.0/12",
+    "nexthop": "192.0.2.33",
+    "as_path": [64500, 64501, 64502, 4200000001],
+    "origin": "incomplete",
+    "med": 4294967295,
+    "local_pref": 0,
+    "atomic_aggregate": true,
+    "aggregator": "64500:192.0.2.33",
+    "originator_id": "172.16.255.1",
+    "cluster_list": ["172.16.255.2", "172.16.255.3", "172.16.255.4"],
+    "aigp": 18446744073709551615,
+    "standard_communities": ["64500:64500", "no-export", "0x00000000"],
+    "extended_communities": ["rt:64500:4294967295", "soo:1:1", "rt:4294967295:0"],
+    "large_communities": ["0:0:0", "4294967295:4294967295:4294967295"],
+    "path_id": 1,
+    "raw_attributes": [{"flags": ["optional", "transitive"], "code": 254, "value_hex": "0102030405060708"}]
+  },
+  {
+    "prefix": "2001:db8:aaaa::/64",
+    "nexthop": "2001:db8::42",
+    "as_path": [4200000001, 64500],
+    "origin": 1,
+    "med": 1,
+    "local_pref": 4294967294,
+    "atomic_aggregate": true,
+    "aggregator": "4200000002:198.51.100.2",
+    "originator_id": "192.0.2.111",
+    "cluster_list": ["192.0.2.112"],
+    "aigp": 281474976710656,
+    "standard_communities": ["no-advertise", "65535:65535"],
+    "extended_communities": ["soo:4200000001:1"],
+    "ipv6_extended_communities": ["rt:2001:db8:ffff::1:65535"],
+    "large_communities": ["1:2:3"],
+    "path_id": 2,
+    "raw_attributes": [{"flags": ["optional"], "code": 253, "value_hex": "00ff"}]
+  },
+  {
+    "prefix": "10.99.0.0/16",
+    "nexthop": "192.0.2.77",
+    "rd": "4200000001:1",
+    "label": 524288,
+    "as_path": [64510, 64520],
+    "origin": "egp",
+    "med": 777,
+    "local_pref": 888,
+    "atomic_aggregate": true,
+    "aggregator": "64510:10.99.0.1",
+    "originator_id": "10.99.255.1",
+    "cluster_list": ["10.99.255.2"],
+    "aigp": 99,
+    "standard_communities": ["64510:1"],
+    "extended_communities": ["rt:64510:99"],
+    "large_communities": ["64510:9:9"],
+    "path_id": 9
+  },
+  {
+    "prefix": "2001:db8:bbbb::/56",
+    "nexthop": "2001:db8::b",
+    "rd": "198.51.100.1:42",
+    "label": 42,
+    "med": 0,
+    "local_pref": 100,
+    "originator_id": "198.51.100.42",
+    "cluster_list": ["198.51.100.43", "198.51.100.44"],
+    "aigp": 42,
+    "standard_communities": ["no-export-subconfed"],
+    "large_communities": ["42:42:42"]
+  },
+  {
+    "prefix": "192.168.0.0/16",
+    "nexthop": "192.0.2.254",
+    "as_path": [],
+    "local_pref": 300,
+    "originator_id": "192.0.2.250",
+    "cluster_list": ["192.0.2.251", "192.0.2.250"],
+    "aigp": 1
+  }
+]

@@ -124,6 +124,10 @@ the prefix and the next hop must match it. Optional fields per route:
 | `origin`               | `"igp"` / `"egp"` / `"incomplete"` or `0`-`2`                        | `igp`     |
 | `med`, `local_pref`    | u32                                                                 | omitted   |
 | `atomic_aggregate`     | bool                                                                | `false`   |
+| `aggregator`           | RFC 4271 AGGREGATOR: `"asn:a.b.c.d"` (always the 4-byte-AS form)     | omitted   |
+| `originator_id`        | RFC 4456 ORIGINATOR_ID: IPv4 router id                               | omitted   |
+| `cluster_list`         | RFC 4456 CLUSTER_LIST: array of IPv4 cluster ids, outermost first    | omitted   |
+| `aigp`                 | RFC 7311 AIGP metric, u64 (one type-1 TLV)                           | omitted   |
 | `standard_communities` | `"asn:value"`, `"no-export"`, `"no-advertise"`, `"no-export-subconfed"`, or `"0xNNNNNNNN"` | omitted |
 | `extended_communities` | `"rt:admin:value"`, `"soo:admin:value"` (2- or 4-byte-AS form picked from the admin), or 16 raw hex digits | omitted |
 | `ipv6_extended_communities` | RFC 5701 (attr 25): `"rt:<ipv6>:<local>"`, `"soo:<ipv6>:<local>"`, or 40 raw hex digits | omitted |
@@ -293,7 +297,11 @@ cross-validated against the independent `mrtparse` Python parser.
 `tests/parsers/run-docker.sh` builds selected MRT parsers in isolated Docker
 images, generates corpus files under `target/parser-harness/corpus`, and
 mounts that directory read-only into each container. This keeps parser builds
-and package installs out of the host system.
+and package installs out of the host system. The same harness is available in
+CI as the manually triggered `Parser harness` workflow
+(`.github/workflows/parser-harness.yml`, run via the Actions tab or
+`gh workflow run parser-harness.yml`), with the parser selection and
+`--strict` flag as inputs.
 
 ```console
 $ tests/parsers/run-docker.sh
