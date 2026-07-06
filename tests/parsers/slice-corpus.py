@@ -14,6 +14,7 @@ def parse_types(value):
 def main():
     parser = argparse.ArgumentParser(description="Copy selected MRT records into a manifest-preserving subcorpus")
     parser.add_argument("--types", required=True, type=parse_types, help="comma-separated MRT type numbers to retain")
+    parser.add_argument("--drop-kinds", default="", help="comma-separated manifest record kinds to exclude")
     parser.add_argument("input_mrt", type=Path)
     parser.add_argument("input_manifest", type=Path)
     parser.add_argument("output_mrt", type=Path)
@@ -27,8 +28,12 @@ def main():
     records = []
     counts = {"valid": 0, "skip": 0, "abort": 0}
 
+    drop_kinds = {part for part in args.drop_kinds.split(",") if part}
+
     for record in manifest["records"]:
         if int(record["mrt_type"]) not in args.types:
+            continue
+        if record["kind"] in drop_kinds:
             continue
         start = int(record["offset"])
         end = start + int(record["size"])

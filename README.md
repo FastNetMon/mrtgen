@@ -204,9 +204,14 @@ Parser-support caveats (reflected in the harness checks): mrtparse decodes
 SAFI-128 UPDATEs fully but cannot walk TABLE_DUMP_V2 RIB_GENERIC VPN records,
 has no FlowSpec NLRI decoder (it skips the MP_REACH body gracefully), and
 leaves attribute 25 / unknown attribute codes raw — which still allows
-byte-exact validation. FastNetMon's FlowSpec decoder covers only a subset of
-RFC 8955 — see the FastNetMon cross-validation section below for how the
-harness keeps its gaps visible without failing on them.
+byte-exact validation. bgpdump aborts on a duplicate ORIGIN attribute
+(`assert(attr->origin == -1)` in `process_one_attr` instead of RFC 7606
+treat-as-withdraw), so its runner reports that as a KNOWN-CRASH and repeats
+the run on `bgpdump-corpus.mrt` / `bgpdump-fatal/*.mrt` variants with the
+triggering record sliced out, keeping the rest of the corpus covered.
+FastNetMon's FlowSpec decoder covers only a subset of RFC 8955 — see the
+FastNetMon cross-validation section below for how the harness keeps its gaps
+visible without failing on them.
 
 ## Manifest
 

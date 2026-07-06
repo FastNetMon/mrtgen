@@ -119,6 +119,28 @@ for fatal in "$OUT_DIR"/fatal/*.mrt; do
         "$OUT_DIR/bgp-fatal/$name.manifest.json"
 done
 
+# bgpdump aborts on the duplicate-ORIGIN record (upstream assert, reported as
+# KNOWN-CRASH by its runner) and never reaches anything after it; also build
+# variants without that record so the rest of the corpus keeps coverage.
+python3 "$ROOT/tests/parsers/slice-corpus.py" \
+    --types 12,13,16,17 \
+    --drop-kinds invalid_attr_duplicate_origin_len4 \
+    "$OUT_DIR/corpus.mrt" \
+    "$OUT_DIR/corpus.mrt.manifest.json" \
+    "$OUT_DIR/bgpdump-corpus.mrt" \
+    "$OUT_DIR/bgpdump-corpus.mrt.manifest.json"
+mkdir -p "$OUT_DIR/bgpdump-fatal"
+for fatal in "$OUT_DIR"/fatal/*.mrt; do
+    name="$(basename "$fatal")"
+    python3 "$ROOT/tests/parsers/slice-corpus.py" \
+        --types 12,13,16,17 \
+        --drop-kinds invalid_attr_duplicate_origin_len4 \
+        "$fatal" \
+        "$fatal.manifest.json" \
+        "$OUT_DIR/bgpdump-fatal/$name" \
+        "$OUT_DIR/bgpdump-fatal/$name.manifest.json"
+done
+
 for parser in "${PARSERS[@]}"; do
     dockerfile="$ROOT/tests/parsers/docker/$parser.Dockerfile"
     if [[ ! -f "$dockerfile" ]]; then
