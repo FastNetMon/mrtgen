@@ -5,6 +5,7 @@
 # Manual-only: parser images are rebuilt from upstream on every run, so this
 # is slower and less hermetic than the unit tests.
 name: Parser harness
+run-name: "Parser harness: ${{ inputs.parsers || 'all parsers' }}${{ inputs.strict && ' (strict)' || '' }}"
 
 on:
   workflow_dispatch:
