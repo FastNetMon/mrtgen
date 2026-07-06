@@ -61,6 +61,13 @@ pub struct FlowSpec {
     /// IPv6 only (RFC 8956 section 3.7).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub flow_label: Vec<NumericMatch>,
+    /// Escape hatch for hostile corpora: raw component bytes appended
+    /// verbatim after the typed components, inside the correctly-framed
+    /// NLRI. This is the only way to express RFC violations the typed
+    /// fields refuse — duplicate or out-of-order components, unknown
+    /// component types, truncated operator lists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_components_hex: Option<String>,
 }
 
 /// One {op, value} element of a numeric-operator component. A bare number
@@ -213,6 +220,16 @@ fn validate_numeric_max(items: &[NumericMatch], what: &str, max: u64) -> Result<
     Ok(())
 }
 
+fn parse_hex(s: &str, what: &str) -> Result<Vec<u8>, String> {
+    if s.len() % 2 != 0 {
+        return Err(format!("{what}: odd-length hex string"));
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| format!("{what}: invalid hex at offset {i}")))
+        .collect()
+}
+
 fn validate_prefix(spec: &str, what: &str) -> Result<(), String> {
     let (_, addr, bits) = parse_prefix(spec)?;
     if prefix_has_host_bits(&addr, bits) {
@@ -342,6 +359,9 @@ pub fn encode_nlri(fs: &FlowSpec) -> Result<(Vec<u8>, bool), String> {
         }
         encode_numeric(&mut c, T_FLOW_LABEL, &fs.flow_label, "flowspec flow_label")?;
     }
+    if let Some(hex) = &fs.raw_components_hex {
+        c.extend(parse_hex(hex, "flowspec raw_components_hex")?);
+    }
     if c.is_empty() {
         return Err("flowspec: at least one match component is required".into());
     }
@@ -414,6 +434,29 @@ mod tests {
         assert!(encode_nlri(&fs(r#"{"dst_prefix": "1.2.3.0/24", "src_prefix": "2001:db8::/32"}"#)).is_err(), "family mismatch");
         assert!(encode_nlri(&fs(r#"{"port": [{}]}"#)).is_err(), "empty op");
         assert!(encode_nlri(&fs(r#"{"fragment": [{"flags": ["nope"]}]}"#)).is_err(), "bad flag name");
+    }
+
+    /// Raw component bytes go in verbatim after the typed components,
+    /// letting hostile corpora express duplicate / out-of-order / unknown
+    /// components the typed fields refuse.
+    #[test]
+    fn raw_components_appended() {
+        // Typed dst_port 80 followed by a raw protocol component (type 3
+        // after type 5 - deliberate RFC 8955 ordering violation).
+        let f = fs(r#"{"dst_port": [80], "raw_components_hex": "038106"}"#);
+        let (nlri, v6) = encode_nlri(&f).unwrap();
+        assert!(!v6);
+        assert_eq!(nlri, [0x06, 0x05, 0x81, 0x50, 0x03, 0x81, 0x06]);
+
+        // Raw-only rule: duplicate destination prefixes.
+        let f = fs(r#"{"raw_components_hex": "0118c000020118c00002"}"#);
+        let (nlri, _) = encode_nlri(&f).unwrap();
+        assert_eq!(nlri[0] as usize, nlri.len() - 1);
+        assert_eq!(&nlri[1..6], &nlri[6..11]);
+
+        assert!(encode_nlri(&fs(r#"{"raw_components_hex": "abc"}"#)).is_err(), "odd hex");
+        assert!(encode_nlri(&fs(r#"{"raw_components_hex": "zz"}"#)).is_err(), "bad hex");
+        assert!(encode_nlri(&fs(r#"{"raw_components_hex": ""}"#)).is_err(), "empty rule");
     }
 
     #[test]

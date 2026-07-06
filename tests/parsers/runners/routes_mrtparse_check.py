@@ -294,6 +294,12 @@ def check_flowspec_record(det, mrec, raw, fail):
     if wire != path_id + nlri:
         fail(f"flowspec NLRI on wire: expected {(path_id + nlri).hex()}, got {wire.hex()}")
 
+    if flow.get("raw_components_hex"):
+        # Deliberately hostile NLRI (duplicate/out-of-order/unknown/truncated
+        # components): the independent decoder below models a compliant
+        # parser and would rightly reject it, so stop at the wire assertion.
+        return
+
     # 2. Independent decode of the NLRI, compared against the rule spec.
     try:
         comps = decode_flowspec_nlri(nlri, flow_v6(flow))
@@ -536,7 +542,8 @@ def check_bgp4mp(path, manifest):
 def check(corpus_dir):
     corpus_dir = Path(corpus_dir)
     failures = []
-    for stem, checker in (("routes-td2", check_td2), ("routes-bgp4mp", check_bgp4mp), ("routes-flowspec", check_bgp4mp)):
+    for stem, checker in (("routes-td2", check_td2), ("routes-bgp4mp", check_bgp4mp),
+                          ("routes-flowspec", check_bgp4mp), ("routes-flowspec-absurd", check_bgp4mp)):
         mrt = corpus_dir / f"{stem}.mrt"
         if not mrt.exists():
             failures.append(f"{mrt.name}: missing (harness should generate it)")

@@ -190,6 +190,17 @@ records the exact NLRI bytes under `details.nlri_hex` and the action
 communities under `details.action_ext_communities_hex`; the NLRI encoder is
 unit-tested against the worked examples in RFC 8955 section 4.3.
 
+For hostile corpora, `"raw_components_hex"` appends arbitrary component
+bytes verbatim after the typed components, inside the correctly-framed NLRI —
+the only way to express RFC violations the typed fields refuse (duplicate or
+out-of-order components, unknown component types, truncated operator lists).
+It emits unvalidated wire bytes, so the route must set `"expect": "skip"`.
+`tests/parsers/routes-flowspec-absurd.json` uses it (plus
+contradictory-but-legal typed rules such as ICMP conditions combined with
+ports, TCP flags on UDP, or a reversed `range`) to probe decoder robustness;
+the FastNetMon runner reports those as HOSTILE-OK when the decoder either
+refuses or survives them, and only fails on a crash.
+
 Unknown JSON keys are rejected so typos fail loudly. Output is deterministic
 and comes with the same manifest as corpus mode: route records default to
 `expect: valid`, and `details` echoes the route's fields for CI assertions.

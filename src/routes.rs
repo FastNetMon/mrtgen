@@ -501,6 +501,9 @@ fn parse_route(i: usize, r: &RouteSpec) -> Result<ParsedRoute, String> {
         (None, Some(fs)) => {
             if expect == Expect::Valid {
                 crate::flowspec::validate_domains(fs).map_err(ctx)?;
+                if fs.raw_components_hex.is_some() {
+                    return Err(ctx("flowspec raw_components_hex emits unvalidated wire bytes; set expect to skip".into()));
+                }
             }
             let (nlri, v6) = crate::flowspec::encode_nlri(fs).map_err(ctx)?;
             (v6, Vec::new(), 0, Some(nlri))
@@ -1085,6 +1088,7 @@ mod tests {
             (r#"[{"flowspec":{"dscp":[64]}}]"#, "flowspec dscp"),
             (r#"[{"flowspec":{"afi":"ipv6","flow_label":[1048576]}}]"#, "flowspec flow_label"),
             (r#"[{"flowspec":{"dst_prefix":"192.0.2.129/25"}}]"#, "non-zero host bits"),
+            (r#"[{"flowspec":{"raw_components_hex":"038106"}}]"#, "set expect to skip"),
         ];
         for (json, needle) in cases {
             let routes = routes_from_json(json).unwrap();

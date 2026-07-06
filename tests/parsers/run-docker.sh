@@ -94,6 +94,10 @@ cargo run --quiet -- \
     --routes "$ROOT/tests/parsers/routes-flowspec-fnm.json" \
     --routes-format bgp4mp \
     --out "$OUT_DIR/routes-flowspec-fnm.mrt"
+cargo run --quiet -- \
+    --routes "$ROOT/tests/parsers/routes-flowspec-absurd.json" \
+    --routes-format bgp4mp \
+    --out "$OUT_DIR/routes-flowspec-absurd.mrt"
 
 echo "Creating BGP-family subcorpora for parsers that do not support IGP MRT types"
 python3 "$ROOT/tests/parsers/slice-corpus.py" \

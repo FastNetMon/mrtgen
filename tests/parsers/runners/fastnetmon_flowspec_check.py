@@ -190,6 +190,8 @@ def split_nlri(nlri):
 
 def case_label(flow):
     parts = [k if k != "afi" else flow["afi"] for k in LABEL_ORDER if flow.get(k)]
+    if flow.get("raw_components_hex"):
+        parts.append(f"raw:{flow['raw_components_hex']}")
     return "+".join(parts) or "empty"
 
 
@@ -201,16 +203,18 @@ def stderr_tail(proc, limit=3):
 class Report:
     def __init__(self, strict, shim):
         self.strict, self.shim = strict, shim
-        self.counts = {"PASS": 0, "FAIL": 0, "KNOWN-FAIL": 0, "UNEXPECTED-PASS": 0}
+        self.counts = {"PASS": 0, "FAIL": 0, "KNOWN-FAIL": 0, "UNEXPECTED-PASS": 0, "HOSTILE-OK": 0}
         self.failures = []          # messages that always fail the run
         self.unexpected = []        # fail the run in strict mode only
         self.gap_tally = {}         # reason -> [case refs]
         self.note_tally = {}        # note -> [case refs]
+        self.hostile_tally = {}     # observation -> [case refs]
 
     def case(self, ref, verdict, label, detail=""):
         self.counts[verdict] += 1
         pad = {"PASS": "PASS           ", "FAIL": "FAIL           ",
-               "KNOWN-FAIL": "KNOWN-FAIL     ", "UNEXPECTED-PASS": "UNEXPECTED-PASS"}[verdict]
+               "KNOWN-FAIL": "KNOWN-FAIL     ", "UNEXPECTED-PASS": "UNEXPECTED-PASS",
+               "HOSTILE-OK": "HOSTILE-OK     "}[verdict]
         print(f"  {pad} {ref} {label}{' — ' + detail if detail else ''}")
 
     def tally(self, bucket, reasons, ref):
@@ -243,6 +247,16 @@ class Report:
             msg = f"decoder shim crashed (rc={proc.returncode}): {stderr_tail(proc)}"
             self.failures.append(f"{ref}: {msg}")
             self.case(ref, "FAIL", label, msg)
+            return
+
+        if flow.get("raw_components_hex"):
+            # Hostile NLRI (duplicate/out-of-order/unknown/truncated
+            # components): no correct decode exists, the contract is only
+            # "do not crash". Report what the decoder chose to do.
+            outcome = "decoded the RFC-violating NLRI" if proc.returncode == 0 else "refused"
+            warn = stderr_tail(proc, limit=1)
+            self.tally(self.hostile_tally, [outcome], ref)
+            self.case(ref, "HOSTILE-OK", label, outcome + (f" ({warn})" if warn else ""))
             return
 
         if gates:
@@ -300,9 +314,14 @@ class Report:
             for note, refs in sorted(self.note_tally.items(), key=lambda kv: -len(kv[1])):
                 print(f"  {len(refs):2}x {note}")
                 print(f"       cases: {', '.join(refs)}")
+        if self.hostile_tally:
+            print("Hostile-NLRI behavior (crash-safety cases; decode-or-refuse both acceptable):")
+            for outcome, refs in sorted(self.hostile_tally.items(), key=lambda kv: -len(kv[1])):
+                print(f"  {len(refs):2}x {outcome}")
+                print(f"       cases: {', '.join(refs)}")
         c = self.counts
         print(f"Summary: {c['PASS']} pass, {c['KNOWN-FAIL']} known-fail (expected decoder gaps), "
-              f"{c['UNEXPECTED-PASS']} unexpected-pass, {c['FAIL']} fail")
+              f"{c['HOSTILE-OK']} hostile-ok, {c['UNEXPECTED-PASS']} unexpected-pass, {c['FAIL']} fail")
         for msg in self.failures:
             print(f"  - {msg}", file=sys.stderr)
         for msg in self.unexpected:
@@ -322,7 +341,8 @@ def main():
     report = Report(strict=os.environ.get("MRTGEN_STRICT") == "1", shim=shim)
 
     checked_any = False
-    for stem, required in (("routes-flowspec-fnm", True), ("routes-flowspec", False)):
+    for stem, required in (("routes-flowspec-fnm", True), ("routes-flowspec", False),
+                           ("routes-flowspec-absurd", False)):
         manifest_path = corpus_dir / f"{stem}.mrt.manifest.json"
         if not manifest_path.exists():
             if required:

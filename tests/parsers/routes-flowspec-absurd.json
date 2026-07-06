@@ -1,0 +1,59 @@
+[
+  {
+    "flowspec": {"dst_prefix": "192.0.2.0/24", "raw_components_hex": "0d8107"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "0118c000020118c00002"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"src_prefix": "203.0.113.0/24", "raw_components_hex": "0218cb0071"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [6], "raw_components_hex": "038111"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"dst_port": [80], "raw_components_hex": "038106"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "ff8101"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "008101"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [6], "raw_components_hex": "05"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"dst_prefix": "2001:db8::/32", "fragment": [{"flags": ["dont-fragment"]}]},
+    "nexthop": "2001:db8::fe",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [1], "icmp_type": [8], "dst_port": [53]},
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [17], "tcp_flags": [{"flags": ["syn"]}]},
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"dst_port": [{"range": [139, 137]}]},
+    "actions": {"rate_limit_bytes": 0}
+  }
+]
