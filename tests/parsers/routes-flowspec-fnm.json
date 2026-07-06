@@ -1,0 +1,395 @@
+[
+  {
+    "flowspec": {
+      "dst_prefix": "192.0.2.0/24"
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "src_prefix": "203.0.113.0/24"
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "192.0.2.0/24",
+      "src_prefix": "203.0.113.0/24",
+      "protocol": [
+        6
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 125000
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        6,
+        17
+      ]
+    },
+    "actions": {
+      "rate_limit_packets": 100
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        {
+          "eq": 6
+        }
+      ],
+      "dst_port": [
+        80,
+        443
+      ],
+      "src_port": [
+        1024
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "packet_length": [
+        64,
+        1500
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        6
+      ],
+      "tcp_flags": [
+        {
+          "flags": [
+            "syn"
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        6
+      ],
+      "tcp_flags": [
+        {
+          "flags": [
+            "syn",
+            "ack"
+          ],
+          "match": true
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        6
+      ],
+      "tcp_flags": [
+        {
+          "flags": [
+            "ece",
+            "cwr"
+          ]
+        },
+        {
+          "flags": [
+            "fin",
+            "psh",
+            "urg"
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "tcp_flags": [
+        {
+          "flags": [
+            "rst"
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "192.0.2.1/32",
+      "fragment": [
+        {
+          "flags": [
+            "dont-fragment",
+            "first-fragment"
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "198.51.100.0/25",
+      "src_prefix": "198.51.100.128/25",
+      "protocol": [
+        17
+      ],
+      "dst_port": [
+        53
+      ],
+      "src_port": [
+        5353
+      ],
+      "packet_length": [
+        512
+      ],
+      "fragment": [
+        {
+          "flags": [
+            "is-fragment"
+          ]
+        }
+      ]
+    },
+    "nexthop": "192.0.2.99",
+    "actions": {
+      "redirect": "64500:1"
+    }
+  },
+  {
+    "flowspec": {
+      "port": [
+        25
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dst_port": [
+        {
+          "range": [
+            137,
+            139
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "src_port": [
+        {
+          "gt": 1023
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        1
+      ],
+      "icmp_type": [
+        8
+      ],
+      "icmp_code": [
+        0
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dscp": [
+        46
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "protocol": [
+        6
+      ],
+      "tcp_flags": [
+        {
+          "flags": 2570
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "fragment": [
+        {
+          "flags": [
+            "is-fragment"
+          ],
+          "not": true
+        }
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "afi": "ipv6",
+      "protocol": [
+        17
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dst_prefix": "2001:db8::/32",
+      "flow_label": [
+        7
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  },
+  {
+    "flowspec": {
+      "dst_port": [
+        1000,
+        1001,
+        1002,
+        1003,
+        1004,
+        1005,
+        1006,
+        1007,
+        1008,
+        1009,
+        1010,
+        1011,
+        1012,
+        1013,
+        1014,
+        1015,
+        1016,
+        1017,
+        1018,
+        1019,
+        1020,
+        1021,
+        1022,
+        1023,
+        1024,
+        1025,
+        1026,
+        1027,
+        1028,
+        1029,
+        1030,
+        1031,
+        1032,
+        1033,
+        1034,
+        1035,
+        1036,
+        1037,
+        1038,
+        1039,
+        1040,
+        1041,
+        1042,
+        1043,
+        1044,
+        1045,
+        1046,
+        1047,
+        1048,
+        1049,
+        1050,
+        1051,
+        1052,
+        1053,
+        1054,
+        1055,
+        1056,
+        1057,
+        1058,
+        1059,
+        1060,
+        1061,
+        1062,
+        1063,
+        1064,
+        1065,
+        1066,
+        1067,
+        1068,
+        1069,
+        1070,
+        1071,
+        1072,
+        1073,
+        1074,
+        1075,
+        1076,
+        1077,
+        1078,
+        1079
+      ]
+    },
+    "actions": {
+      "rate_limit_bytes": 0
+    }
+  }
+]

@@ -1,6 +1,7 @@
 # Extended cross-parser validation: builds external MRT parsers (mrtparse,
-# bgpdump, bgpkit-parser) in Docker and runs them over freshly generated
-# corpora, including the field-level route-list and FlowSpec checks.
+# bgpdump, bgpkit-parser, FastNetMon's FlowSpec decoder) in Docker and runs
+# them over freshly generated corpora, including the field-level route-list
+# and FlowSpec checks.
 # Manual-only: parser images are rebuilt from upstream on every run, so this
 # is slower and less hermetic than the unit tests.
 name: Parser harness
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       parsers:
-        description: "Parsers to run, space-separated (mrtparse bgpdump bgpkit-parser); empty runs all"
+        description: "Parsers to run, space-separated (mrtparse bgpdump bgpkit-parser fastnetmon); empty runs all"
         required: false
         default: ""
       strict:

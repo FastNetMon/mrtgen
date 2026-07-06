@@ -19,6 +19,9 @@ Parsers:
   mrtparse       Python mrtparse package
   bgpdump        RIPE NCC bgpdump utility
   bgpkit-parser  Rust BGPKIT Parser CLI
+  fastnetmon     FastNetMon's BGP FlowSpec decoder (pinned commit), fed the
+                 manifests' flowspec NLRI bytes; reports the decoder's known
+                 gaps as visible KNOWN-FAIL entries without failing the run
 
 Options:
   --strict   Make malformed-corpus and fatal-tail parser errors fail the run.
@@ -56,7 +59,7 @@ while (($#)); do
 done
 
 if ((${#PARSERS[@]} == 0)); then
-    PARSERS=(mrtparse bgpdump bgpkit-parser)
+    PARSERS=(mrtparse bgpdump bgpkit-parser fastnetmon)
 fi
 
 FAILURES=()
@@ -87,6 +90,10 @@ cargo run --quiet -- \
     --routes "$ROOT/tests/parsers/routes-flowspec.json" \
     --routes-format bgp4mp \
     --out "$OUT_DIR/routes-flowspec.mrt"
+cargo run --quiet -- \
+    --routes "$ROOT/tests/parsers/routes-flowspec-fnm.json" \
+    --routes-format bgp4mp \
+    --out "$OUT_DIR/routes-flowspec-fnm.mrt"
 
 echo "Creating BGP-family subcorpora for parsers that do not support IGP MRT types"
 python3 "$ROOT/tests/parsers/slice-corpus.py" \

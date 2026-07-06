@@ -204,7 +204,9 @@ Parser-support caveats (reflected in the harness checks): mrtparse decodes
 SAFI-128 UPDATEs fully but cannot walk TABLE_DUMP_V2 RIB_GENERIC VPN records,
 has no FlowSpec NLRI decoder (it skips the MP_REACH body gracefully), and
 leaves attribute 25 / unknown attribute codes raw — which still allows
-byte-exact validation.
+byte-exact validation. FastNetMon's FlowSpec decoder covers only a subset of
+RFC 8955 — see the FastNetMon cross-validation section below for how the
+harness keeps its gaps visible without failing on them.
 
 ## Manifest
 
@@ -318,6 +320,8 @@ The default run builds and executes:
 * `mrtparse` from PyPI
 * `bgpdump` from the Debian package archive
 * `bgpkit-parser` from Cargo with its CLI feature enabled
+* `fastnetmon` — FastNetMon's BGP FlowSpec decoder
+  (`bgp_protocol_flow_spec.cpp`, pinned commit), compiled into a small shim
 
 You can run one parser at a time:
 
@@ -325,6 +329,7 @@ You can run one parser at a time:
 $ tests/parsers/run-docker.sh mrtparse
 $ tests/parsers/run-docker.sh bgpdump
 $ tests/parsers/run-docker.sh bgpkit-parser
+$ tests/parsers/run-docker.sh fastnetmon
 ```
 
 The harness generates both the complete corpus and BGP-family subcorpora for
@@ -364,6 +369,33 @@ parsers that only support the usual MRT BGP types (`TABLE_DUMP`,
   routes-td2.mrt: ok; records checked=8
   routes-bgp4mp.mrt: ok; records checked=7
   ```
+
+### FastNetMon FlowSpec cross-validation
+
+The `fastnetmon` runner cross-validates mrtgen's FlowSpec NLRI encoder
+against the decoder that actually consumes such announcements in production:
+`flow_spec_decode_nlri_value()` from
+[FastNetMon](https://github.com/pavel-odintsov/fastnetmon)'s
+`bgp_protocol_flow_spec.cpp`, compiled at a pinned commit into
+`fastnetmon_flowspec_shim`. For every flowspec record in
+`routes-flowspec-fnm.mrt` (per-feature cases from
+`tests/parsers/routes-flowspec-fnm.json`) and `routes-flowspec.mrt`, the
+`fastnetmon_flowspec_check.py` driver feeds the manifest's `nlri_hex` to the
+shim and compares FastNetMon's decoded JSON field by field with the rule the
+manifest promises.
+
+FastNetMon's decoder intentionally covers a subset of RFC 8955 (IPv4 only,
+equality operators only, no common-port/ICMP/DSCP components, 1-byte NLRI
+length only). Rules outside that envelope are expected to be refused and are
+reported as **KNOWN-FAIL** — visible line by line, with the refusal reason,
+and tallied in a "decoder gaps" section that doubles as the upstream
+improvement backlog — but they never fail the run. If a KNOWN-FAIL case
+suddenly decodes (FastNetMon gained support), it is flagged as
+**UNEXPECTED-PASS**, which fails the run in `--strict` mode as the prompt to
+re-pin the commit and update the checker's gap model. Decoded rules are also
+scanned for silent degradations (dropped `ece`/`cwr` TCP flags, discarded
+match-bit semantics, `tcp_flags` hidden unless protocol `tcp` is present),
+reported as notes.
 
 By default, malformed-corpus behavior is reported but not treated as a hard
 failure unless the parser times out or crashes. Use strict mode when you want
