@@ -197,9 +197,19 @@ out-of-order components, unknown component types, truncated operator lists).
 It emits unvalidated wire bytes, so the route must set `"expect": "skip"`.
 `tests/parsers/routes-flowspec-absurd.json` uses it (plus
 contradictory-but-legal typed rules such as ICMP conditions combined with
-ports, TCP flags on UDP, or a reversed `range`) to probe decoder robustness;
-the FastNetMon runner reports those as HOSTILE-OK when the decoder either
-refuses or survives them, and only fails on a crash.
+ports, TCP flags on UDP/ICMP/no protocol, or a reversed `range`) to probe
+decoder robustness. For each `raw_components_hex` case the FastNetMon runner
+independently classifies the first RFC violation in the NLRI (unknown or
+duplicate or out-of-order component type, truncated operator list or prefix,
+v6-only component in an IPv4 rule) and thus what a compliant decoder *should*
+do — refuse. It reports **HOSTILE-OK** when FastNetMon refuses (or when the
+raw bytes are actually well formed), and **KNOWN-LENIENT** when FastNetMon
+accepts an NLRI it should have refused — a visible leniency backlog that
+never fails the run, only a crash does. The current corpus surfaces that
+FastNetMon silently merges duplicate enumerable components (protocol, ports,
+fragment, tcp_flags) and decodes out-of-order components despite logging the
+violation, while rejecting duplicate prefixes, unknown types, and truncation
+cleanly.
 
 Unknown JSON keys are rejected so typos fail loudly. Output is deterministic
 and comes with the same manifest as corpus mode: route records default to

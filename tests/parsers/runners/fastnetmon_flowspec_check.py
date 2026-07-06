@@ -188,6 +188,65 @@ def split_nlri(nlri):
     return nlri[0], nlri[1:]
 
 
+# Component type codes and the v6-only ones (RFC 8955 section 4.2 / RFC 8956).
+KNOWN_TYPES = set(range(1, 14))
+PREFIX_TYPES = {1, 2}
+V6_ONLY_TYPES = {13: "flow_label"}
+
+
+def first_violation(data, v6):
+    """First RFC 8955/8956 structural violation in a component list, or None
+    if it is well formed. Independent of FastNetMon: it decides what an
+    RFC-compliant decoder *should* do (refuse when this returns a reason), so
+    accepting such an NLRI is leniency. Types must be known, strictly
+    ascending and unique; operator lists must terminate within the buffer;
+    prefixes must fit their declared length; v6-only components must not
+    appear in an IPv4 rule."""
+    pos, last, seen = 0, 0, set()
+    max_bits = 128 if v6 else 32
+    while pos < len(data):
+        ctype = data[pos]
+        pos += 1
+        if ctype not in KNOWN_TYPES:
+            return f"unknown component type {ctype}"
+        if ctype in seen:
+            return f"duplicate component type {ctype}"
+        if ctype < last:
+            return f"component type {ctype} after {last} (not ascending)"
+        if ctype in V6_ONLY_TYPES and not v6:
+            return f"{V6_ONLY_TYPES[ctype]} (type {ctype}) in an IPv4 rule"
+        seen.add(ctype)
+        last = ctype
+        if ctype in PREFIX_TYPES:
+            if pos >= len(data):
+                return f"truncated prefix (type {ctype}): no length octet"
+            bits = data[pos]
+            pos += 1
+            if v6:
+                if pos >= len(data):
+                    return f"truncated prefix (type {ctype}): no offset octet"
+                pos += 1  # IPv6 offset octet
+            if bits > max_bits:
+                return f"prefix length {bits} exceeds {max_bits} (type {ctype})"
+            nbytes = (bits + 7) // 8
+            if pos + nbytes > len(data):
+                return f"truncated prefix address (type {ctype})"
+            pos += nbytes
+        else:  # numeric / bitmask operator list, end bit terminated
+            while True:
+                if pos >= len(data):
+                    return f"truncated operator list for type {ctype}"
+                op = data[pos]
+                pos += 1
+                vlen = 1 << ((op >> 4) & 0x3)
+                if pos + vlen > len(data):
+                    return f"truncated {vlen}-byte value for type {ctype}"
+                pos += vlen
+                if op & 0x80:  # end-of-list
+                    break
+    return None
+
+
 def case_label(flow):
     parts = [k if k != "afi" else flow["afi"] for k in LABEL_ORDER if flow.get(k)]
     if flow.get("raw_components_hex"):
@@ -203,18 +262,20 @@ def stderr_tail(proc, limit=3):
 class Report:
     def __init__(self, strict, shim):
         self.strict, self.shim = strict, shim
-        self.counts = {"PASS": 0, "FAIL": 0, "KNOWN-FAIL": 0, "UNEXPECTED-PASS": 0, "HOSTILE-OK": 0}
+        self.counts = {"PASS": 0, "FAIL": 0, "KNOWN-FAIL": 0, "UNEXPECTED-PASS": 0,
+                       "HOSTILE-OK": 0, "KNOWN-LENIENT": 0}
         self.failures = []          # messages that always fail the run
         self.unexpected = []        # fail the run in strict mode only
         self.gap_tally = {}         # reason -> [case refs]
         self.note_tally = {}        # note -> [case refs]
         self.hostile_tally = {}     # observation -> [case refs]
+        self.lenient_tally = {}     # accepted-violation -> [case refs]
 
     def case(self, ref, verdict, label, detail=""):
         self.counts[verdict] += 1
         pad = {"PASS": "PASS           ", "FAIL": "FAIL           ",
                "KNOWN-FAIL": "KNOWN-FAIL     ", "UNEXPECTED-PASS": "UNEXPECTED-PASS",
-               "HOSTILE-OK": "HOSTILE-OK     "}[verdict]
+               "HOSTILE-OK": "HOSTILE-OK     ", "KNOWN-LENIENT": "KNOWN-LENIENT  "}[verdict]
         print(f"  {pad} {ref} {label}{' — ' + detail if detail else ''}")
 
     def tally(self, bucket, reasons, ref):
@@ -250,13 +311,25 @@ class Report:
             return
 
         if flow.get("raw_components_hex"):
-            # Hostile NLRI (duplicate/out-of-order/unknown/truncated
-            # components): no correct decode exists, the contract is only
-            # "do not crash". Report what the decoder chose to do.
-            outcome = "decoded the RFC-violating NLRI" if proc.returncode == 0 else "refused"
+            # Hostile NLRI: the contract is "must not crash". A structurally
+            # malformed NLRI additionally *should* be refused (RFC 8955 defers
+            # to RFC 7606); accepting one is leniency, reported as KNOWN-LENIENT
+            # so it stays a visible upstream backlog item without failing.
+            decoded = proc.returncode == 0
             warn = stderr_tail(proc, limit=1)
-            self.tally(self.hostile_tally, [outcome], ref)
-            self.case(ref, "HOSTILE-OK", label, outcome + (f" ({warn})" if warn else ""))
+            violation = first_violation(value, flow_v6(flow))
+            if violation is None:
+                # The raw append happens to be well formed; either outcome is fine.
+                outcome = "decoded" if decoded else "refused"
+                self.tally(self.hostile_tally, [f"well-formed raw NLRI {outcome}"], ref)
+                self.case(ref, "HOSTILE-OK", label, f"{outcome} (well-formed raw append)")
+            elif not decoded:
+                self.tally(self.hostile_tally, [f"refused: {violation}"], ref)
+                self.case(ref, "HOSTILE-OK", label, f"refused (RFC-compliant) — {violation}")
+            else:
+                self.tally(self.lenient_tally, [violation], ref)
+                diag = warn if warn else "no diagnostic emitted"
+                self.case(ref, "KNOWN-LENIENT", label, f"accepted despite {violation} ({diag})")
             return
 
         if gates:
@@ -314,14 +387,20 @@ class Report:
             for note, refs in sorted(self.note_tally.items(), key=lambda kv: -len(kv[1])):
                 print(f"  {len(refs):2}x {note}")
                 print(f"       cases: {', '.join(refs)}")
+        if self.lenient_tally:
+            print("FastNetMon accepts these malformed NLRIs a compliant decoder would refuse (leniency backlog):")
+            for violation, refs in sorted(self.lenient_tally.items(), key=lambda kv: -len(kv[1])):
+                print(f"  {len(refs):2}x {violation}")
+                print(f"       cases: {', '.join(refs)}")
         if self.hostile_tally:
-            print("Hostile-NLRI behavior (crash-safety cases; decode-or-refuse both acceptable):")
+            print("Hostile-NLRI behavior FastNetMon handles correctly (refused, or well-formed):")
             for outcome, refs in sorted(self.hostile_tally.items(), key=lambda kv: -len(kv[1])):
                 print(f"  {len(refs):2}x {outcome}")
                 print(f"       cases: {', '.join(refs)}")
         c = self.counts
         print(f"Summary: {c['PASS']} pass, {c['KNOWN-FAIL']} known-fail (expected decoder gaps), "
-              f"{c['HOSTILE-OK']} hostile-ok, {c['UNEXPECTED-PASS']} unexpected-pass, {c['FAIL']} fail")
+              f"{c['HOSTILE-OK']} hostile-ok, {c['KNOWN-LENIENT']} known-lenient (accepted malformed), "
+              f"{c['UNEXPECTED-PASS']} unexpected-pass, {c['FAIL']} fail")
         for msg in self.failures:
             print(f"  - {msg}", file=sys.stderr)
         for msg in self.unexpected:

@@ -40,6 +40,36 @@
     "actions": {"rate_limit_bytes": 0}
   },
   {
+    "flowspec": {"dst_port": [80], "raw_components_hex": "058150"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"fragment": [{"flags": ["is-fragment"]}], "raw_components_hex": "0c8001"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"src_port": [1024], "raw_components_hex": "058150"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "0121c0000200"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "0118c000"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [6], "tcp_flags": [{"flags": ["syn"]}], "raw_components_hex": "098002"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
     "flowspec": {"dst_prefix": "2001:db8::/32", "fragment": [{"flags": ["dont-fragment"]}]},
     "nexthop": "2001:db8::fe",
     "actions": {"rate_limit_bytes": 0}
@@ -50,6 +80,18 @@
   },
   {
     "flowspec": {"protocol": [17], "tcp_flags": [{"flags": ["syn"]}]},
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [1], "tcp_flags": [{"flags": ["syn", "ack"]}]},
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"tcp_flags": [{"flags": ["syn"]}]},
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [1], "dst_port": [80], "src_port": [443]},
     "actions": {"rate_limit_bytes": 0}
   },
   {
