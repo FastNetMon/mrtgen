@@ -466,4 +466,35 @@ mod tests {
         // type 9, op = end | not | m, value 0x12
         assert_eq!(nlri, [0x03, 0x09, 0x83, 0x12]);
     }
+
+    #[test]
+    fn nlri_length_encoding_boundaries() {
+        for len in [1usize, 239, 240, 4095] {
+            let f = FlowSpec { raw_components_hex: Some("00".repeat(len)), ..FlowSpec::default() };
+            let (nlri, _) = encode_nlri(&f).unwrap();
+            let header = if len < 240 { 1 } else { 2 };
+            assert_eq!(nlri.len(), len + header);
+            if len < 240 {
+                assert_eq!(nlri[0] as usize, len);
+            } else {
+                assert_eq!((((nlri[0] & 0x0f) as usize) << 8) | nlri[1] as usize, len);
+                assert_eq!(nlri[0] & 0xf0, 0xf0);
+            }
+        }
+        let too_large = FlowSpec { raw_components_hex: Some("00".repeat(4096)), ..FlowSpec::default() };
+        assert!(encode_nlri(&too_large).unwrap_err().contains("4095-byte"));
+    }
+
+    #[test]
+    fn numeric_value_width_boundaries() {
+        for (value, code, width) in [
+            (0xff, 0, 1), (0x100, 1, 2), (0xffff, 1, 2),
+            (0x1_0000, 2, 4), (0xffff_ffff, 2, 4),
+            (0x1_0000_0000, 3, 8),
+        ] {
+            let (got_code, bytes) = value_bytes(value);
+            assert_eq!(got_code, code, "value {value}");
+            assert_eq!(bytes.len(), width, "value {value}");
+        }
+    }
 }

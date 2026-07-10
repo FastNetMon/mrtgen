@@ -2,6 +2,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Generation profile recorded in the manifest.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CorpusProfile {
+    /// Compact protocol and boundary coverage suitable for normal CI.
+    #[default]
+    Standard,
+    /// Standard coverage plus high-volume and near-limit records.
+    Stress,
+    /// A corpus produced from a caller-supplied route list.
+    Routes,
+}
+
 /// Expected outcome when a conforming MRT parser encounters a record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -35,6 +48,10 @@ pub struct RecordEntry {
     pub kind: String,
     pub expect: Expect,
     pub description: String,
+    /// Stable selectors used to derive valid-only, recovery, and
+    /// parser-specific subcorpora without relying on record ordering.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
     /// Content facts a validator can assert after parsing
     /// (prefixes, AS numbers, message types, ...).
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
@@ -45,6 +62,8 @@ pub struct RecordEntry {
 pub struct Manifest {
     pub generator: String,
     pub generator_version: String,
+    #[serde(default)]
+    pub profile: CorpusProfile,
     /// Total file size in bytes.
     pub file_size: u64,
     pub counts: Counts,

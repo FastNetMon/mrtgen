@@ -24,8 +24,11 @@ run_one() {
     echo "$label: rc=$rc; records_count_output=${output:-<empty>}; stderr_bytes=$stderr_bytes"
 
     if [[ "$mode" == "valid" ]]; then
-        if [[ "$rc" -ne 0 || -z "$output" ]]; then
-            FAILURES+=("bgpkit-parser failed to count the BGP-family valid-only corpus")
+        local expected count
+        expected="$(jq '.records | length' "$path.manifest.json")"
+        count="$(grep -oE '[0-9]+' "$out" | tail -1 || true)"
+        if [[ "$rc" -ne 0 || "$count" != "$expected" ]]; then
+            FAILURES+=("bgpkit-parser valid-only count mismatch: expected $expected, got ${count:-<empty>}")
         fi
         return
     fi
@@ -47,6 +50,35 @@ run_one "bgp-corpus.mrt" "$CORPUS_DIR/bgp-corpus.mrt" full
 for fatal in "$CORPUS_DIR"/bgp-fatal/*.mrt; do
     [[ -e "$fatal" ]] || continue
     run_one "bgp-fatal/$(basename "$fatal")" "$fatal" fatal
+done
+
+BASELINE=/usr/local/share/mrtgen/parser-baseline.json
+mapfile -t KNOWN_STOPS < <(jq -r '."bgpkit-parser".recovery_known_stop[]' "$BASELINE")
+is_known_stop() {
+    local want="$1" item
+    for item in "${KNOWN_STOPS[@]}"; do [[ "$item" == "$want" ]] && return 0; done
+    return 1
+}
+
+for recovery in "$CORPUS_DIR"/recovery/*.mrt; do
+    [[ -e "$recovery" ]] || continue
+    kind="$(basename "$recovery" .mrt)"
+    out="/tmp/recovery_${kind}.out"
+    err="/tmp/recovery_${kind}.err"
+    set +e
+    timeout 30s bgpkit-parser "$recovery" >"$out" 2>"$err"
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]] && grep -q '198\.51\.100\.128/25' "$out"; then
+        echo "recovery/$kind: PASS sentinel reached"
+        if is_known_stop "$kind"; then
+            FAILURES+=("bgpkit-parser unexpected recovery pass; remove stale baseline: $kind")
+        fi
+    elif is_known_stop "$kind" && [[ "$STRICT" != 1 ]]; then
+        echo "recovery/$kind: KNOWN-STOP"
+    else
+        FAILURES+=("bgpkit-parser failed to reach recovery sentinel after $kind (rc=$rc)")
+    fi
 done
 
 if ((${#FAILURES[@]})); then

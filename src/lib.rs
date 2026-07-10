@@ -65,7 +65,7 @@ pub mod types;
 pub mod writer;
 
 pub use flowspec::FlowSpec;
-pub use generator::{corpus_peers, generate, Corpus, FatalKind, GeneratorConfig};
-pub use manifest::{Expect, Manifest, RecordEntry};
+pub use generator::{corpus_peers, generate, generate_profile, Corpus, FatalKind, GeneratorConfig};
+pub use manifest::{CorpusProfile, Expect, Manifest, RecordEntry};
 pub use routes::{generate_from_routes, routes_from_json, Actions, RawAttribute, RouteFormat, RouteSpec};
 pub use writer::MrtRecord;

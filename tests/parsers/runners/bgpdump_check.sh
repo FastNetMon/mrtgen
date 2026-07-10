@@ -86,6 +86,39 @@ if ((${#KNOWN_CRASHES[@]})); then
     echo "    should be RFC 7606 treat-as-withdraw; files: ${KNOWN_CRASHES[*]}"
 fi
 
+BASELINE=/usr/local/share/mrtgen/parser-baseline.json
+mapfile -t BASELINE_CRASHES < <(jq -r '.bgpdump.recovery_known_crash[]' "$BASELINE")
+mapfile -t BASELINE_STOPS < <(jq -r '.bgpdump.recovery_known_stop[]' "$BASELINE")
+in_list() {
+    local want="$1"; shift
+    local item
+    for item in "$@"; do [[ "$item" == "$want" ]] && return 0; done
+    return 1
+}
+
+for recovery in "$CORPUS_DIR"/recovery/*.mrt; do
+    [[ -e "$recovery" ]] || continue
+    kind="$(basename "$recovery" .mrt)"
+    out="/tmp/recovery_${kind}.out"
+    err="/tmp/recovery_${kind}.err"
+    set +e
+    timeout 30s bgpdump -m "$recovery" >"$out" 2>"$err"
+    rc=$?
+    set -e
+    if [[ "$rc" -eq 0 ]] && grep -q '198\.51\.100\.128/25' "$out"; then
+        echo "recovery/$kind: PASS sentinel reached"
+        if in_list "$kind" "${BASELINE_CRASHES[@]}" || in_list "$kind" "${BASELINE_STOPS[@]}"; then
+            FAILURES+=("bgpdump unexpected recovery pass; remove stale baseline: $kind")
+        fi
+    elif [[ "$rc" -ge 128 ]] && in_list "$kind" "${BASELINE_CRASHES[@]}" && [[ "$STRICT" != 1 ]]; then
+        echo "recovery/$kind: KNOWN-CRASH"
+    elif in_list "$kind" "${BASELINE_STOPS[@]}" && [[ "$STRICT" != 1 ]]; then
+        echo "recovery/$kind: KNOWN-STOP"
+    else
+        FAILURES+=("bgpdump failed to reach recovery sentinel after $kind (rc=$rc)")
+    fi
+done
+
 if ((${#FAILURES[@]})); then
     echo "failures:" >&2
     for failure in "${FAILURES[@]}"; do

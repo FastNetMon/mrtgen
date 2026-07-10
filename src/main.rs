@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use mrtgen::{generate, generate_from_routes, routes_from_json, Corpus, FatalKind, GeneratorConfig, RouteFormat};
+use mrtgen::{generate_profile, generate_from_routes, routes_from_json, Corpus, CorpusProfile, FatalKind, GeneratorConfig, RouteFormat};
 
 const USAGE: &str = "\
 mrtgen - deterministic synthetic MRT corpus generator (RFC 6396 / 8050)
@@ -25,6 +25,8 @@ OPTIONS:
                              files contain the same records as the main file
                              plus the fatal tail
         --base-timestamp <N> Timestamp of record 0 [default: 1600000000]
+        --profile <PROFILE>  Built-in corpus profile: standard | stress
+                             [default: standard]
     -r, --routes <FILE>      Generate records from a JSON route list instead
                              of the built-in corpus. FILE holds an array of
                              objects: {\"prefix\": \"1.2.3.0/24\",
@@ -64,6 +66,7 @@ struct Args {
     base_timestamp: u32,
     routes: Option<PathBuf>,
     routes_format: RouteFormat,
+    profile: CorpusProfile,
 }
 
 fn parse_fatal(s: &str) -> Result<FatalKind, String> {
@@ -96,6 +99,7 @@ fn parse_args() -> Result<Option<Args>, String> {
         base_timestamp: 1_600_000_000,
         routes: None,
         routes_format: RouteFormat::TableDumpV2,
+        profile: CorpusProfile::Standard,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -113,6 +117,11 @@ fn parse_args() -> Result<Option<Args>, String> {
             "--base-timestamp" => {
                 args.base_timestamp = value("--base-timestamp")?.parse().map_err(|e| format!("--base-timestamp: {e}"))?
             }
+            "--profile" => args.profile = match value("--profile")?.as_str() {
+                "standard" => CorpusProfile::Standard,
+                "stress" => CorpusProfile::Stress,
+                other => return Err(format!("unknown --profile '{other}' (expected standard or stress)")),
+            },
             "-r" | "--routes" => args.routes = Some(PathBuf::from(value("--routes")?)),
             "--routes-format" => args.routes_format = parse_routes_format(&value("--routes-format")?)?,
             other => return Err(format!("unknown argument '{other}' (see --help)")),
@@ -122,6 +131,9 @@ fn parse_args() -> Result<Option<Args>, String> {
         && (args.no_valid || args.no_skip || args.no_combo || args.no_attr_errors || args.fatal.is_some() || args.fatal_dir.is_some())
     {
         return Err("--routes replaces the built-in corpus and cannot be combined with --no-*, --fatal or --fatal-dir".into());
+    }
+    if args.routes.is_some() && args.profile != CorpusProfile::Standard {
+        return Err("--routes cannot be combined with --profile stress".into());
     }
     Ok(Some(args))
 }
@@ -189,7 +201,7 @@ fn main() -> ExitCode {
         fatal: args.fatal,
     };
 
-    if let Err(e) = write_corpus(&generate(&cfg), &args.out, &manifest_path) {
+    if let Err(e) = write_corpus(&generate_profile(args.profile, &cfg), &args.out, &manifest_path) {
         eprintln!("error writing {}: {e}", args.out.display());
         return ExitCode::FAILURE;
     }
@@ -203,7 +215,7 @@ fn main() -> ExitCode {
             let cfg = GeneratorConfig { fatal: Some(kind), ..cfg.clone() };
             let mrt = dir.join(format!("{}.mrt", kind.kind_name()));
             let man = dir.join(format!("{}.mrt.manifest.json", kind.kind_name()));
-            if let Err(e) = write_corpus(&generate(&cfg), &mrt, &man) {
+            if let Err(e) = write_corpus(&generate_profile(args.profile, &cfg), &mrt, &man) {
                 eprintln!("error writing {}: {e}", mrt.display());
                 return ExitCode::FAILURE;
             }

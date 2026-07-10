@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import routes_mrtparse_check
 
 STRICT = os.environ.get("MRTGEN_STRICT") == "1"
+BASELINE_PATH = Path("/usr/local/share/mrtgen/parser-baseline.json")
 
 
 def load_manifest(path):
@@ -64,8 +65,12 @@ def main():
     valid_manifest = load_manifest(corpus_dir / "bgp-valid.mrt.manifest.json")
     valid_result = parse_file(valid)
     report("bgp-valid.mrt", valid_result, valid_manifest)
-    if not valid_result["ok"] or valid_result["records_seen"] == 0:
-        failures.append("mrtparse failed to parse the BGP-family valid-only corpus")
+    expected_valid = len(valid_manifest["records"])
+    if not valid_result["ok"] or valid_result["records_seen"] != expected_valid or valid_result["entry_errors"]:
+        failures.append(
+            f"mrtparse valid-only count mismatch: expected {expected_valid}, "
+            f"saw {valid_result['records_seen']} with {valid_result['entry_errors']} entry errors"
+        )
 
     full = corpus_dir / "bgp-corpus.mrt"
     full_manifest = load_manifest(corpus_dir / "bgp-corpus.mrt.manifest.json")
@@ -81,6 +86,26 @@ def main():
         report(f"bgp-fatal/{fatal.name}", result, fatal_manifest)
         if STRICT and result["ok"] and result["records_seen"] >= len(fatal_manifest["records"]):
             failures.append(f"mrtparse did not stop before abort tail: {fatal.name}")
+
+    baseline = load_manifest(BASELINE_PATH) if BASELINE_PATH.exists() else {"mrtparse": {"recovery_known_stop": []}}
+    known_stop = set(baseline.get("mrtparse", {}).get("recovery_known_stop", []))
+    seen_known = set()
+    for recovery in sorted((corpus_dir / "recovery").glob("*.mrt")):
+        kind = recovery.stem
+        result = parse_file(recovery)
+        recovered = result["ok"] and result["records_seen"] >= 2
+        if recovered:
+            print(f"recovery/{kind}: PASS sentinel reached")
+            if kind in known_stop:
+                failures.append(f"mrtparse unexpected recovery pass; remove stale baseline: {kind}")
+        elif kind in known_stop and not STRICT:
+            seen_known.add(kind)
+            print(f"recovery/{kind}: KNOWN-STOP records_seen={result['records_seen']}")
+        else:
+            failures.append(f"mrtparse failed to reach recovery sentinel after {kind}")
+    stale = known_stop - seen_known
+    if stale:
+        failures.append(f"mrtparse stale recovery baseline entries: {sorted(stale)}")
 
     # Route-list mode: field-level cross-check of every --routes option.
     if (corpus_dir / "routes-td2.mrt").exists():

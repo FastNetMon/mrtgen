@@ -33,7 +33,7 @@ use serde_json::json;
 
 use crate::bgp;
 use crate::generator::Corpus;
-use crate::manifest::{Counts, Expect, Manifest, RecordEntry};
+use crate::manifest::{CorpusProfile, Counts, Expect, Manifest, RecordEntry};
 use crate::records::{self, Peer, RibEntry};
 use crate::types::*;
 
@@ -692,6 +692,7 @@ pub fn generate_from_routes(routes: &[RouteSpec], format: RouteFormat, base_time
             kind: kind.to_string(),
             expect,
             description,
+            tags: vec![match expect { Expect::Valid => "valid", Expect::Skip => "skip", Expect::Abort => "abort" }.into(), "routes".into()],
             details,
         });
     };
@@ -837,6 +838,7 @@ pub fn generate_from_routes(routes: &[RouteSpec], format: RouteFormat, base_time
     let manifest = Manifest {
         generator: "mrtgen".into(),
         generator_version: env!("CARGO_PKG_VERSION").into(),
+        profile: CorpusProfile::Routes,
         file_size: bytes.len() as u64,
         counts,
         records: entries,

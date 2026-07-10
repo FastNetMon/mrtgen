@@ -10,7 +10,7 @@ use serde_json::json;
 
 use crate::bgp;
 use crate::invalid;
-use crate::manifest::{Counts, Expect, Manifest, RecordEntry};
+use crate::manifest::{CorpusProfile, Counts, Expect, Manifest, RecordEntry};
 use crate::records::{self, Peer, RibEntry};
 use crate::types::*;
 use crate::writer::MrtRecord;
@@ -81,9 +81,30 @@ struct Builder {
     entries: Vec<RecordEntry>,
     counts: Counts,
     base_timestamp: u32,
+    profile: CorpusProfile,
 }
 
 impl Builder {
+    fn tags(&self, rec: &MrtRecord, kind: &str, expect: Expect) -> Vec<String> {
+        let mut tags = vec![match expect {
+            Expect::Valid => "valid",
+            Expect::Skip => "skip",
+            Expect::Abort => "abort",
+        }.into()];
+        let family = match rec.mrt_type {
+            TABLE_DUMP => "table_dump",
+            TABLE_DUMP_V2 => "table_dump_v2",
+            BGP4MP | BGP4MP_ET => "bgp4mp",
+            OSPFV2 | OSPFV3 | OSPFV3_ET => "ospf",
+            ISIS | ISIS_ET => "isis",
+            _ => "unknown",
+        };
+        tags.push(family.into());
+        if kind.contains("boundary") { tags.push("boundary".into()); }
+        if kind.starts_with("stress_") { tags.push("stress".into()); }
+        tags
+    }
+
     fn next_timestamp(&self) -> u32 {
         self.base_timestamp + self.entries.len() as u32
     }
@@ -96,6 +117,7 @@ impl Builder {
             Expect::Skip => self.counts.skip += 1,
             Expect::Abort => self.counts.abort += 1,
         }
+        let tags = self.tags(&rec, kind, expect);
         self.entries.push(RecordEntry {
             index: self.entries.len(),
             offset,
@@ -106,6 +128,7 @@ impl Builder {
             kind: kind.to_string(),
             expect,
             description: description.to_string(),
+            tags,
             details,
         });
     }
@@ -125,6 +148,7 @@ impl Builder {
             kind: kind.to_string(),
             expect: Expect::Abort,
             description: description.to_string(),
+            tags: vec!["abort".into(), "framing".into()],
             details: serde_json::Value::Null,
         });
     }
@@ -154,7 +178,13 @@ pub fn corpus_peers() -> Vec<Peer> {
 
 /// Generate the corpus described by `cfg`.
 pub fn generate(cfg: &GeneratorConfig) -> Corpus {
-    let mut b = Builder { bytes: Vec::new(), entries: Vec::new(), counts: Counts::default(), base_timestamp: cfg.base_timestamp };
+    generate_profile(CorpusProfile::Standard, cfg)
+}
+
+/// Generate either the compact standard corpus or the standard corpus plus
+/// deterministic high-volume stress cases.
+pub fn generate_profile(profile: CorpusProfile, cfg: &GeneratorConfig) -> Corpus {
+    let mut b = Builder { bytes: Vec::new(), entries: Vec::new(), counts: Counts::default(), base_timestamp: cfg.base_timestamp, profile };
 
     if cfg.include_valid {
         emit_valid(&mut b);
@@ -168,6 +198,10 @@ pub fn generate(cfg: &GeneratorConfig) -> Corpus {
     if cfg.include_attr_errors {
         emit_attr_errors(&mut b);
     }
+    emit_edge_cases(&mut b, cfg.include_valid, cfg.include_skip);
+    if profile == CorpusProfile::Stress {
+        emit_stress(&mut b, cfg.include_valid, cfg.include_skip);
+    }
     if let Some(fatal) = cfg.fatal {
         emit_fatal(&mut b, fatal);
     }
@@ -175,11 +209,297 @@ pub fn generate(cfg: &GeneratorConfig) -> Corpus {
     let manifest = Manifest {
         generator: "mrtgen".into(),
         generator_version: env!("CARGO_PKG_VERSION").into(),
+        profile: b.profile,
         file_size: b.bytes.len() as u64,
         counts: b.counts,
         records: b.entries,
     };
     Corpus { bytes: b.bytes, manifest }
+}
+
+fn emit_stress(b: &mut Builder, include_valid: bool, include_skip: bool) {
+    if include_valid {
+        // High record-count stream: unique kinds retain the corpus invariant
+        // and make a premature stop directly visible in the manifest.
+        let keepalive = bgp::bgp_keepalive();
+        for i in 0..100_000u32 {
+            let ts = b.next_timestamp();
+            b.push(
+                records::bgp4mp_message(ts, BGP4MP, None, BGP4MP_MESSAGE_AS4, 4_200_000_001, 4_200_000_002, (i & 0xffff) as u16, &[192,0,2,1], &[192,0,2,2], &keepalive),
+                &format!("stress_keepalive_{i:06}"), Expect::Valid,
+                "High-volume BGP4MP KEEPALIVE stream record", json!({"ordinal":i}),
+            );
+        }
+
+        // Maximum representable Peer Count, alternating all four peer-type
+        // combinations without allocating per-record metadata.
+        let peers: Vec<Peer> = (0..u16::MAX).map(|i| {
+            let ipv6 = i & 1 != 0;
+            let as4 = i & 2 != 0;
+            let ip = if ipv6 {
+                let mut a=v6(0); a[14..].copy_from_slice(&i.to_be_bytes()); a.to_vec()
+            } else {
+                vec![10, (i >> 8) as u8, i as u8, 1]
+            };
+            Peer { bgp_id: [10, (i >> 8) as u8, i as u8, 2], ip, asn: if as4 { 4_200_000_000 + i as u32 } else { i as u32 }, as4 }
+        }).collect();
+        let ts=b.next_timestamp();
+        b.push(records::peer_index_table(ts,[192,0,2,100],"stress-max-peers",&peers),
+               "stress_peer_count_65535",Expect::Valid,"PEER_INDEX_TABLE at the u16 peer-count limit",
+               json!({"peer_count":65535,"encoded_entries":65535}));
+
+        // Largest legal RIB entry count. Empty attributes make the case large
+        // enough to exercise loops without wasting tens of megabytes.
+        let entries: Vec<RibEntry> = (0..u16::MAX).map(|i| RibEntry::new(i, ts, Vec::new())).collect();
+        let ts=b.next_timestamp();
+        b.push(records::rib_afi_safi(ts,RIB_IPV4_UNICAST,0xffff_ffff,&bgp::nlri_v4([0,0,0,0],0),&entries),
+               "stress_rib_entry_count_65535",Expect::Valid,"RIB at the u16 entry-count limit",
+               json!({"entry_count":65535,"sequence":u32::MAX}));
+
+        // Attribute Length is exactly 65535 bytes: a four-byte extended TLV
+        // header plus 65531 opaque value bytes.
+        let ts=b.next_timestamp();
+        let attrs=bgp::attribute(FLAG_OPTIONAL|FLAG_TRANSITIVE,240,&vec![0x5a;65531]);
+        debug_assert_eq!(attrs.len(),65535);
+        let entry=RibEntry::new(0,ts,attrs);
+        b.push(records::rib_afi_safi(ts,RIB_IPV4_UNICAST,0xffff_fffe,&bgp::nlri_v4([203,0,113,0],24),&[entry]),
+               "stress_rib_attribute_length_65535",Expect::Valid,"RIB entry at the u16 Attribute Length limit",
+               json!({"attribute_length":65535}));
+
+        // AS_SEQUENCE count byte at 255, carried in TABLE_DUMP_V2's AS4 form.
+        let ts=b.next_timestamp();
+        let asns:Vec<u32>=(0..255).map(|i|64500+i).collect();
+        let mut attrs=bgp::attr_origin(0); attrs.extend(bgp::attr_as_path_4b(&asns)); attrs.extend(bgp::attr_next_hop([192,0,2,1]));
+        let entry=RibEntry::new(0,ts,attrs);
+        b.push(records::rib_afi_safi(ts,RIB_IPV4_UNICAST,0xffff_fffd,&bgp::nlri_v4([198,51,100,0],24),&[entry]),
+               "stress_as_sequence_count_255",Expect::Valid,"AS_SEQUENCE at its one-octet count limit",json!({"as_count":255}));
+    }
+
+    if include_skip {
+        // Systematic inner-length mutations remain skip-class because MRT
+        // framing is honest; each is later paired with a recovery sentinel.
+        for declared in [0u16, 1, 17, 18, 20, 4095, 4097, u16::MAX] {
+            let ts=b.next_timestamp();
+            let msg=bgp::bgp_message_raw([0xff;16],declared,BGP_KEEPALIVE,&[]);
+            b.push(records::bgp4mp_message(ts,BGP4MP,None,BGP4MP_MESSAGE_AS4,4_200_000_001,4_200_000_002,0,&[192,0,2,1],&[192,0,2,2],&msg),
+                   &format!("stress_mutation_bgp_length_{declared}"),Expect::Skip,
+                   "Systematic BGP Length-field mutation",json!({"declared":declared,"actual":19}));
+        }
+    }
+}
+
+/// Boundary and protocol-state cases are kept independent from the historic
+/// sections so `--no-valid` and `--no-skip` continue to mean exactly what
+/// their names say while valid edge cases are never lost from valid-only CI.
+fn emit_edge_cases(b: &mut Builder, include_valid: bool, include_skip: bool) {
+    let wrap_bgp = |ts: u32, msg: &[u8]| {
+        records::bgp4mp_message(ts, BGP4MP, None, BGP4MP_MESSAGE_AS4, 4_200_000_001, 4_200_000_002, 0, &[192, 0, 2, 1], &[192, 0, 2, 2], msg)
+    };
+
+    if include_valid {
+        // Empty structures and count boundaries.
+        let ts = b.next_timestamp();
+        b.push(
+            records::peer_index_table(ts, [0, 0, 0, 0], "", &[]),
+            "boundary_peer_index_zero", Expect::Valid,
+            "PEER_INDEX_TABLE with empty view name and zero peers",
+            json!({"peer_count": 0, "view_name_len": 0}),
+        );
+        let ts = b.next_timestamp();
+        b.push(
+            records::rib_afi_safi(ts, RIB_IPV4_UNICAST, 0, &bgp::nlri_v4([0, 0, 0, 0], 0), &[]),
+            "boundary_rib_zero_entries", Expect::Valid,
+            "RIB_IPV4_UNICAST default route with zero entries",
+            json!({"prefix": "0.0.0.0/0", "entry_count": 0, "sequence": 0}),
+        );
+
+        // Non-octet-aligned prefixes on both sides of octet transitions.
+        for (i, bits) in [1u8, 7, 8, 9, 31].into_iter().enumerate() {
+            let ts = b.next_timestamp();
+            let prefix = [0x80, 0, 0, 0];
+            let entry = RibEntry::new(0, ts, records::standard_attrs_v4(i as u32 + 60));
+            b.push(
+                records::rib_afi_safi(ts, RIB_IPV4_UNICAST, 2_000 + i as u32, &bgp::nlri_v4(prefix, bits), &[entry]),
+                &format!("boundary_rib_v4_prefix_{bits}"), Expect::Valid,
+                "Valid non-octet-aligned IPv4 prefix boundary",
+                json!({"bits": bits, "entry_count": 1}),
+            );
+        }
+        let ts = b.next_timestamp();
+        let mut p127 = [0u8; 16]; p127[0] = 0x20; p127[1] = 0x01; p127[2] = 0x0d; p127[3] = 0xb8; p127[15] = 0xfe;
+        let entry = RibEntry::new(2, ts, records::standard_attrs_v6(60));
+        b.push(
+            records::rib_afi_safi(ts, RIB_IPV6_UNICAST, 2_010, &bgp::nlri_v6(p127, 127), &[entry]),
+            "boundary_rib_v6_prefix_127", Expect::Valid,
+            "Valid non-octet-aligned IPv6 /127 prefix", json!({"bits": 127, "entry_count": 1}),
+        );
+
+        // Empty/EOR, withdrawal-only, multi-prefix, and MP_UNREACH UPDATEs.
+        let valid_updates = [
+            ("boundary_bgp_empty_update", bgp::bgp_update(&[], &[], &[]), json!({"mode": "eor"})),
+            ("boundary_bgp_withdraw_only", bgp::bgp_update(&bgp::nlri_v4([198, 51, 100, 0], 24), &[], &[]), json!({"withdrawn": 1})),
+            ("boundary_bgp_multi_nlri", {
+                let mut attrs = bgp::attr_origin(0); attrs.extend(bgp::attr_as_path_4b(&[64500])); attrs.extend(bgp::attr_next_hop([192,0,2,1]));
+                let mut nlri = bgp::nlri_v4([10,0,0,0], 8); nlri.extend(bgp::nlri_v4([172,16,0,0], 12));
+                bgp::bgp_update(&[], &attrs, &nlri)
+            }, json!({"announced": 2})),
+            ("boundary_bgp_mp_unreach_v6", {
+                let attrs = bgp::attr_mp_unreach(BGP_AFI_IPV6, SAFI_UNICAST, &bgp::nlri_v6(v6(0), 64));
+                bgp::bgp_update(&[], &attrs, &[])
+            }, json!({"withdrawn": 1, "afi": 2})),
+        ];
+        for (kind, msg, details) in valid_updates {
+            let ts = b.next_timestamp();
+            b.push(wrap_bgp(ts, &msg), kind, Expect::Valid, "Valid BGP UPDATE boundary form", details);
+        }
+
+        // Exact maximum RFC 4271 message length (NOTIFICATION data is opaque).
+        let ts = b.next_timestamp();
+        let msg = bgp::bgp_notification(6, 0, &vec![0x5a; 4096 - 21]);
+        debug_assert_eq!(msg.len(), 4096);
+        b.push(wrap_bgp(ts, &msg), "boundary_bgp_length_4096", Expect::Valid,
+               "BGP message exactly at the RFC 4271 4096-byte maximum", json!({"bgp_message_len": 4096}));
+
+        // Attribute short/extended-length transition in TABLE_DUMP_V2, where
+        // the enclosing record is not subject to BGP's 4096-byte message cap.
+        for len in [255usize, 256] {
+            let ts = b.next_timestamp();
+            let mut attrs = records::standard_attrs_v4(70 + len as u32);
+            attrs.extend(bgp::attribute(FLAG_OPTIONAL | FLAG_TRANSITIVE, 240, &vec![0xa5; len]));
+            let entry = RibEntry::new(0, ts, attrs);
+            b.push(records::rib_afi_safi(ts, RIB_IPV4_UNICAST, 2_100 + len as u32, &bgp::nlri_v4([203,0,113,0],24), &[entry]),
+                   &format!("boundary_attr_value_{len}"), Expect::Valid,
+                   "Unknown optional-transitive attribute at the one/two-octet length transition",
+                   json!({"attribute_value_len": len, "extended_length": len > 255}));
+        }
+
+        // Every BGP4MP subtype under ET framing, including both state-change
+        // forms. The state bodies use the same prelude encoder as messages.
+        let et_subtypes = [
+            BGP4MP_STATE_CHANGE, BGP4MP_MESSAGE, BGP4MP_MESSAGE_AS4,
+            BGP4MP_STATE_CHANGE_AS4, BGP4MP_MESSAGE_LOCAL,
+            BGP4MP_MESSAGE_AS4_LOCAL, BGP4MP_MESSAGE_ADDPATH,
+            BGP4MP_MESSAGE_AS4_ADDPATH, BGP4MP_MESSAGE_LOCAL_ADDPATH,
+            BGP4MP_MESSAGE_AS4_LOCAL_ADDPATH,
+        ];
+        for subtype in et_subtypes {
+            let ts = b.next_timestamp();
+            let state = matches!(subtype, BGP4MP_STATE_CHANGE | BGP4MP_STATE_CHANGE_AS4);
+            let payload = if state { vec![0, STATE_IDLE as u8, 0, STATE_ESTABLISHED as u8] } else { bgp::bgp_keepalive() };
+            let as4 = matches!(subtype, BGP4MP_MESSAGE_AS4 | BGP4MP_STATE_CHANGE_AS4 | BGP4MP_MESSAGE_AS4_LOCAL | BGP4MP_MESSAGE_AS4_ADDPATH | BGP4MP_MESSAGE_AS4_LOCAL_ADDPATH);
+            let (pa, la) = if as4 { (4_200_000_001, 4_200_000_002) } else { (64500, 64501) };
+            b.push(records::bgp4mp_message(ts, BGP4MP_ET, Some(if subtype == 0 { 0 } else { 999_999 }), subtype, pa, la, u16::MAX, &[192,0,2,1], &[192,0,2,2], &payload),
+                   &format!("boundary_bgp4mp_et_subtype_{subtype}"), Expect::Valid,
+                   "BGP4MP_ET subtype and microsecond boundary", json!({"subtype": subtype, "microsecond": if subtype == 0 {0} else {999999}}));
+        }
+
+        emit_igp_edge_cases(b, true);
+    }
+
+    if include_skip {
+        // Inner BGP length and message-type failures with honest MRT framing.
+        let malformed = [
+            ("boundary_bgp_length_18", bgp::bgp_message_raw([0xff;16], 18, BGP_KEEPALIVE, &[]), "length_below_minimum"),
+            ("boundary_bgp_length_4097", bgp::bgp_message_raw([0xff;16], 4097, BGP_NOTIFICATION, &vec![0; 4097-19]), "length_above_maximum"),
+            ("boundary_bgp_unknown_message_type", bgp::bgp_message(255, &[]), "unknown_message_type"),
+            ("boundary_bgp_keepalive_payload", bgp::bgp_message(BGP_KEEPALIVE, &[1]), "keepalive_nonempty"),
+            ("boundary_bgp_trailing_bytes", { let mut x=bgp::bgp_keepalive(); x.extend([0xde,0xad]); x }, "bytes_after_message"),
+        ];
+        for (kind, msg, reason) in malformed {
+            let ts = b.next_timestamp();
+            b.push(wrap_bgp(ts, &msg), kind, Expect::Skip, "Malformed BGP message boundary", json!({"reason": reason}));
+        }
+
+        // Prefix truncation and non-zero padding bits.
+        for (kind, nlri, reason) in [
+            ("boundary_bgp_prefix_truncated", vec![24, 192, 0], "prefix_octets_truncated"),
+            ("boundary_bgp_prefix_padding_bits", vec![9, 10, 0x7f], "nonzero_unused_prefix_bits"),
+        ] {
+            let ts = b.next_timestamp();
+            let mut attrs=bgp::attr_origin(0); attrs.extend(bgp::attr_as_path_4b(&[64500])); attrs.extend(bgp::attr_next_hop([192,0,2,1]));
+            let msg=bgp::bgp_update(&[], &attrs, &nlri);
+            b.push(wrap_bgp(ts,&msg),kind,Expect::Skip,"Malformed NLRI prefix boundary",json!({"reason":reason}));
+        }
+
+        // Missing mandatory attributes, duplicate NEXT_HOP, wrong flags, and
+        // legal-looking AS segment containers with illegal structure.
+        let attr_cases = [
+            ("boundary_attr_missing_origin", { let mut a=bgp::attr_as_path_4b(&[64500]); a.extend(bgp::attr_next_hop([192,0,2,1])); a }, "missing_origin"),
+            ("boundary_attr_missing_as_path", { let mut a=bgp::attr_origin(0); a.extend(bgp::attr_next_hop([192,0,2,1])); a }, "missing_as_path"),
+            ("boundary_attr_duplicate_nexthop", { let mut a=bgp::attr_origin(0); a.extend(bgp::attr_as_path_4b(&[64500])); a.extend(bgp::attr_next_hop([192,0,2,1])); a.extend(bgp::attr_next_hop([192,0,2,2])); a }, "duplicate_attribute"),
+            ("boundary_attr_localpref_optional", { let mut a=bgp::attr_origin(0); a.extend(bgp::attr_as_path_4b(&[64500])); a.extend(bgp::attr_next_hop([192,0,2,1])); a.extend(bgp::attribute(FLAG_OPTIONAL,ATTR_LOCAL_PREF,&100u32.to_be_bytes())); a }, "wrong_flags"),
+            ("boundary_attr_unknown_wellknown", { let mut a=bgp::attr_origin(0); a.extend(bgp::attr_as_path_4b(&[64500])); a.extend(bgp::attr_next_hop([192,0,2,1])); a.extend(bgp::attribute(FLAG_TRANSITIVE,241,&[1])); a }, "unknown_well_known"),
+        ];
+        for (kind, attrs, reason) in attr_cases {
+            let ts=b.next_timestamp(); let msg=bgp::bgp_update(&[],&attrs,&bgp::nlri_v4([198,51,100,0],24));
+            b.push(wrap_bgp(ts,&msg),kind,Expect::Skip,"BGP path-attribute semantic error",json!({"reason":reason}));
+        }
+
+        // TABLE_DUMP_V2 count and peer-type damage.
+        let ts=b.next_timestamp();
+        let mut body=vec![0,0,0,0, 0,0, 0,1]; // collector, empty view, one peer
+        body.extend([0x80, 192,0,2,1, 192,0,2,2, 0xfc,0x00]);
+        b.push(MrtRecord::new(ts,TABLE_DUMP_V2,PEER_INDEX_TABLE,body),"boundary_peer_reserved_type_bits",Expect::Skip,
+               "PEER_INDEX_TABLE peer type uses reserved bits",json!({"reason":"reserved_peer_type_bits"}));
+        let ts=b.next_timestamp();
+        let mut body=Vec::new(); body.extend(7u32.to_be_bytes()); body.extend([24,203,0,113]); body.extend(2u16.to_be_bytes());
+        let e=RibEntry::new(0,ts,records::standard_attrs_v4(1));
+        let one=records::rib_afi_safi(ts,RIB_IPV4_UNICAST,7,&bgp::nlri_v4([203,0,113,0],24),&[e]);
+        body.extend_from_slice(&one.body[10..]); // encode one entry while count claims two
+        b.push(MrtRecord::new(ts,TABLE_DUMP_V2,RIB_IPV4_UNICAST,body),"boundary_rib_entry_count_plus_one",Expect::Skip,
+               "RIB entry count claims one more entry than present",json!({"reason":"entry_count_overrun"}));
+
+        // ET timestamp outside its defined microsecond range.
+        let ts=b.next_timestamp();
+        b.push(records::bgp4mp_message(ts,BGP4MP_ET,Some(1_000_000),BGP4MP_MESSAGE_AS4,4_200_000_001,4_200_000_002,0,&[192,0,2,1],&[192,0,2,2],&bgp::bgp_keepalive()),
+               "boundary_et_microsecond_1000000",Expect::Skip,"ET microsecond timestamp outside 0..999999",json!({"reason":"microsecond_out_of_range"}));
+
+        emit_igp_edge_cases(b, false);
+    }
+}
+
+fn emit_igp_edge_cases(b: &mut Builder, valid: bool) {
+    if valid {
+        // Minimal fixed headers for the remaining OSPF packet types. Their
+        // bodies are deliberately small but internally length-consistent.
+        for ty in 2u8..=5 {
+            let ts=b.next_timestamp();
+            let mut pdu=vec![2,ty,0,24,192,0,2,40,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+            let pdu_len = pdu.len() as u16;
+            pdu[2..4].copy_from_slice(&pdu_len.to_be_bytes());
+            b.push(records::ospfv2(ts,[192,0,2,40],[192,0,2,41],&pdu),&format!("boundary_ospfv2_type_{ty}"),Expect::Valid,
+                   "Length-consistent OSPFv2 packet-type sample",json!({"ospf_type":ty,"pdu_len":pdu.len()}));
+        }
+        for ty in 2u8..=5 {
+            let ts=b.next_timestamp();
+            let mut pdu=vec![3,ty,0,16,192,0,2,50,0,0,0,0,0,0,0,0];
+            let pdu_len = pdu.len() as u16;
+            pdu[2..4].copy_from_slice(&pdu_len.to_be_bytes());
+            b.push(records::ospfv3(ts,None,v6(50),v6(51),&pdu),&format!("boundary_ospfv3_type_{ty}"),Expect::Valid,
+                   "Length-consistent OSPFv3 packet-type sample",json!({"ospf_type":ty,"pdu_len":pdu.len()}));
+        }
+        for ty in [15u8,16,17,18,20,24,25,26,27] {
+            let ts=b.next_timestamp();
+            let pdu=vec![0x83,8,1,0,ty,1,0,0];
+            b.push(records::isis(ts,None,&pdu),&format!("boundary_isis_pdu_{ty}"),Expect::Valid,
+                   "IS-IS PDU family header sample",json!({"pdu_type":ty,"pdu_len":pdu.len()}));
+        }
+    } else {
+        let ts=b.next_timestamp();
+        let pdu=vec![2,1,0,44,0,0,0,0];
+        b.push(records::ospfv2(ts,[192,0,2,1],[192,0,2,2],&pdu),"boundary_ospfv2_length_overrun",Expect::Skip,
+               "OSPFv2 packet length exceeds the available PDU",json!({"reason":"pdu_length_overrun"}));
+        let ts=b.next_timestamp();
+        let pdu=vec![3,255,0,16,0,0,0,0,0,0,0,0,0,0,0,0];
+        b.push(records::ospfv3(ts,None,v6(1),v6(2),&pdu),"boundary_ospfv3_unknown_type",Expect::Skip,
+               "OSPFv3 packet has an unknown type",json!({"reason":"unknown_ospf_type"}));
+        let ts=b.next_timestamp();
+        b.push(records::isis(ts,None,&[0x83,27,1,0,15]),"boundary_isis_truncated_header",Expect::Skip,
+               "IS-IS PDU ends inside its fixed header",json!({"reason":"truncated_pdu_header"}));
+        let ts=b.next_timestamp();
+        b.push(records::isis(ts,None,&[0x83,8,1,0,31,1,0,0]),"boundary_isis_unknown_pdu",Expect::Skip,
+               "IS-IS PDU uses an unassigned PDU type",json!({"reason":"unknown_pdu_type"}));
+    }
 }
 
 fn emit_valid(b: &mut Builder) {

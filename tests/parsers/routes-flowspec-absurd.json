@@ -97,5 +97,38 @@
   {
     "flowspec": {"dst_port": [{"range": [139, 137]}]},
     "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "038006"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "038906"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "03b101"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"raw_components_hex": "03"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"afi": "ipv6", "raw_components_hex": "01200820010d"},
+    "expect": "skip",
+    "actions": {"rate_limit_bytes": 0}
+  },
+  {
+    "flowspec": {"protocol": [6]},
+    "expect": "skip",
+    "raw_attributes": [
+      {"flags": ["optional", "transitive"], "code": 16, "value_hex": "8006"},
+      {"flags": ["optional", "transitive"], "code": 16, "value_hex": "80060000ffffffff"}
+    ]
   }
 ]

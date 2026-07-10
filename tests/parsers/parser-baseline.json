@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "mrtparse": {
+    "recovery_known_stop": []
+  },
+  "bgpkit-parser": {
+    "recovery_known_stop": []
+  },
+  "bgpdump": {
+    "recovery_known_stop": [],
+    "recovery_known_crash": [
+      "invalid_attr_duplicate_origin_len4"
+    ]
+  },
+  "fastnetmon": {
+    "note": "FlowSpec per-case pass/known-lenient/known-reject expectations are maintained by fastnetmon_flowspec_check.py"
+  }
+}

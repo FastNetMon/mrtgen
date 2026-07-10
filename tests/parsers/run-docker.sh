@@ -68,15 +68,15 @@ mkdir -p "$OUT_DIR/fatal"
 
 echo "Generating parser harness corpora in $OUT_DIR"
 cargo run --quiet -- \
-    --out "$OUT_DIR/valid.mrt" \
-    --manifest "$OUT_DIR/valid.mrt.manifest.json" \
-    --no-skip \
-    --no-combo \
-    --no-attr-errors
-cargo run --quiet -- \
     --out "$OUT_DIR/corpus.mrt" \
     --manifest "$OUT_DIR/corpus.mrt.manifest.json" \
     --fatal-dir "$OUT_DIR/fatal"
+python3 "$ROOT/tests/parsers/slice-corpus.py" \
+    --expect valid \
+    "$OUT_DIR/corpus.mrt" \
+    "$OUT_DIR/corpus.mrt.manifest.json" \
+    "$OUT_DIR/valid.mrt" \
+    "$OUT_DIR/valid.mrt.manifest.json"
 
 echo "Generating route-list files (all --routes options) for field-level validation"
 cargo run --quiet -- \
@@ -102,8 +102,9 @@ cargo run --quiet -- \
 echo "Creating BGP-family subcorpora for parsers that do not support IGP MRT types"
 python3 "$ROOT/tests/parsers/slice-corpus.py" \
     --types 12,13,16,17 \
-    "$OUT_DIR/valid.mrt" \
-    "$OUT_DIR/valid.mrt.manifest.json" \
+    --expect valid \
+    "$OUT_DIR/corpus.mrt" \
+    "$OUT_DIR/corpus.mrt.manifest.json" \
     "$OUT_DIR/bgp-valid.mrt" \
     "$OUT_DIR/bgp-valid.mrt.manifest.json"
 python3 "$ROOT/tests/parsers/slice-corpus.py" \
@@ -122,6 +123,13 @@ for fatal in "$OUT_DIR"/fatal/*.mrt; do
         "$OUT_DIR/bgp-fatal/$name" \
         "$OUT_DIR/bgp-fatal/$name.manifest.json"
 done
+
+echo "Creating one malformed-record + valid-sentinel recovery corpus per BGP skip case"
+rm -rf "$OUT_DIR/recovery"
+python3 "$ROOT/tests/parsers/make-recovery-corpora.py" \
+    "$OUT_DIR/corpus.mrt" \
+    "$OUT_DIR/corpus.mrt.manifest.json" \
+    "$OUT_DIR/recovery"
 
 # bgpdump aborts on the duplicate-ORIGIN record (upstream assert, reported as
 # KNOWN-CRASH by its runner) and never reaches anything after it; also build

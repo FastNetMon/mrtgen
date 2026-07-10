@@ -13,7 +13,9 @@ def parse_types(value):
 
 def main():
     parser = argparse.ArgumentParser(description="Copy selected MRT records into a manifest-preserving subcorpus")
-    parser.add_argument("--types", required=True, type=parse_types, help="comma-separated MRT type numbers to retain")
+    parser.add_argument("--types", type=parse_types, help="comma-separated MRT type numbers to retain; default keeps all")
+    parser.add_argument("--expect", choices=("valid", "skip", "abort"), help="retain only this manifest expectation")
+    parser.add_argument("--only-kinds", default="", help="comma-separated manifest record kinds to retain")
     parser.add_argument("--drop-kinds", default="", help="comma-separated manifest record kinds to exclude")
     parser.add_argument("input_mrt", type=Path)
     parser.add_argument("input_manifest", type=Path)
@@ -29,11 +31,16 @@ def main():
     counts = {"valid": 0, "skip": 0, "abort": 0}
 
     drop_kinds = {part for part in args.drop_kinds.split(",") if part}
+    only_kinds = {part for part in args.only_kinds.split(",") if part}
 
     for record in manifest["records"]:
-        if int(record["mrt_type"]) not in args.types:
+        if args.types is not None and int(record["mrt_type"]) not in args.types:
             continue
         if record["kind"] in drop_kinds:
+            continue
+        if only_kinds and record["kind"] not in only_kinds:
+            continue
+        if args.expect is not None and record["expect"] != args.expect:
             continue
         start = int(record["offset"])
         end = start + int(record["size"])
